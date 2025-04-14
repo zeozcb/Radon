@@ -24,8 +24,19 @@ import subprocess
 import sys
 import shutil
 import inspect
+import cpuinfo
+import GPUtil
+import socket
+import uuid
+import re
 
 genius = lyricsgenius.Genius("RVKf9sgQop3EokoVK16dVKOav1q9ii9m06gQRJa9xV5zUQE9jNmJbZXOG-xNwHum")
+
+try:
+    with open('.ver', 'r') as ver_file:
+        current_version = ver_file.read().strip()
+except FileNotFoundError:
+    current_version = "Unknown"
 
 loop_running = False
 
@@ -36,8 +47,6 @@ w = Fore.LIGHTWHITE_EX
 update_message_sent = False
 latest_version = None
 update_available = False
-
-__version__ = "3.2.1"
 
 start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -67,7 +76,7 @@ def selfbot_menu(bot):
 {w} | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB
 {y}------------------------------------------------------------------------------------------------------------------------\n""")
     print(f"""{y}[{b}+{y}]{w} SelfBot Information:\n
-\t{y}[{w}#{y}]{w} Version: v{__version__}
+\t{y}[{w}#{y}]{w} Version: v{current_version}
 \t{y}[{w}#{y}]{w} Logged in as: {bot.user} ({bot.user.id})
 \t{y}[{w}#{y}]{w} Cached Users: {len(bot.users)}
 \t{y}[{w}#{y}]{w} Guilds Connected: {len(bot.guilds)}\n\n
@@ -90,20 +99,18 @@ def selfbot_menu(bot):
 
 bot = commands.Bot(command_prefix=prefix, description='not a selfbot', self_bot=True, help_command=None)
 
-def display_menu():
-    selfbot_menu(bot)
-    print(f"{y}[{Fore.GREEN}!{y}]{w} SelfBot is now online and ready!")
-
 @bot.event
 async def on_ready():
     global update_message_sent, latest_version, update_available
     if platform.system() == "Windows":
-        ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{__version__} - Made By a5traa")
+        ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{current_version} - Made By a5traa")
     
     latest_version, update_available = check_for_updates()
     update_message_sent = False
 
     bot.loop.create_task(auto_check_updates())
+
+    selfbot_menu(bot)
 
     if update_available:
         update_message = f"""
@@ -111,7 +118,7 @@ async def on_ready():
 
 A new version of the SelfBot is available. Would you like to update?
 
-:small_orange_diamond: Current version: `v{__version__}`
+:small_orange_diamond: Current version: `v{current_version}`
 :small_blue_diamond: Latest version: `v{latest_version}`
 
 :arrow_up: To update, use the command: `.update`
@@ -135,7 +142,7 @@ async def on_message(message):
 
 A new version of the SelfBot is available. Would you like to update?
 
-:small_orange_diamond: Current version: `v{__version__}`
+:small_orange_diamond: Current version: `v{current_version}`
 :small_blue_diamond: Latest version: `v{latest_version}`
 
 :arrow_up: To update, use the command: `.update`
@@ -186,7 +193,6 @@ Stay up to date for the best experience!
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
-
 
 @bot.command(aliases=['h'])
 async def help(ctx):
@@ -241,25 +247,111 @@ async def help(ctx):
 > :tv: `{prefix}watching <status>` - Set the activity status as "Watching".  
 > :x: `{prefix}stopactivity` - Reset the activity status.
 > :art: `{prefix}ascii <message>` - Convert a message to ASCII art.
-> :airplane: `{prefix}airplane` <LOOP|ONE> - Sends a 9/11 attack.
+> :airplane: `{prefix}airplane <LOOP|ONE>` - Sends a 9/11 attack.
 > :fire: `{prefix}dick <@user>` - Show the "size" of a user's dick.
 > :x: `{prefix}minesweeper <width> <height>` - Play a game of Minesweeper with custom grid size.
 > :robot: `{prefix}leetspeak <message>` - Speak like a hacker, replacing letters.
 > :musical_note: `{prefix}lyrics <song name or lyrics>` - Search for song lyrics.
 > :computer: `{prefix}exec <python_code>` - Execute python code.
-> :cat: `{prefix}catplay` <LOOP|ONE> - Displays cool cat animation.
+> :cat: `{prefix}catplay <LOOP|ONE>` - Displays cool cat animation.
 > :mag: `{prefix}dox <username>` - Search for potential social media profiles.
 > :zap: `{prefix}zeo` - Displays cool rulez gif.
-> :tv: `{prefix}streaming <status>` - Set the activity status as streaming."""
+> :tv: `{prefix}streaming <status>` - Set the activity status as streaming.
+> :arrows_counterclockwise: `{prefix}reload` - Reload the bot by restarting the start.bat file.
+> :bust_in_silhouette: `{prefix}profile [show|edit]` - Show or edit your custom profile.
+> :octopus: `{prefix}loopstop` - Stop any running loop animations.
+> :gear: `{prefix}uptimeconfig <setting> <value>` - Configure uptime command settings.
+> :pencil: `{prefix}setsocial <platform> <emoji> <text> <link>` - Set your social media links."""
     await ctx.send(help_text)
 
 def check_for_updates():
     try:
         response = requests.get("https://raw.githubusercontent.com/zeozcb/Radon/refs/heads/main/.ver")
         latest_version = response.text.strip()
-        return latest_version, latest_version != __version__
+        return latest_version, latest_version != current_version
     except:
         return None, False
+
+@bot.command()
+async def profile(ctx, action: str = None, *, content: str = None):
+    await ctx.message.delete()
+
+    if action not in ['show', 'edit', None]:
+        await ctx.send(f"> **[ERROR]**: Invalid action. Use `show` or `edit`.\n> __Command__: `{prefix}profile [show|edit]`", delete_after=5)
+        return
+
+    if 'profile' not in config:
+        config['profile'] = {
+            'name': ctx.author.name,
+            'title': 'Cool User',
+            'description': 'I am a cool Discord user!',
+            'emoji': '😎',
+            'badges': ['🏆', '🌟'],
+            'fields': [
+                {'name': 'Favorite Game', 'value': 'Minecraft'},
+                {'name': 'Hobby', 'value': 'Coding'}
+            ]
+        }
+        save_config(config)
+
+    if action == 'edit':
+        if not content:
+            await ctx.send(f"> **[ERROR]**: Please provide content to edit.\n> __Command__: `{prefix}profile edit <field> <new_value>`", delete_after=5)
+            return
+
+        field, _, value = content.partition(' ')
+        if field in ['name', 'title', 'description', 'emoji']:
+            config['profile'][field] = value
+        elif field == 'badges':
+            config['profile']['badges'] = value.split()
+        elif field == 'addfield':
+            name, _, field_value = value.partition(' ')
+            config['profile']['fields'].append({'name': name, 'value': field_value})
+        elif field == 'removefield':
+            config['profile']['fields'] = [f for f in config['profile']['fields'] if f['name'] != value]
+        else:
+            await ctx.send(f"> **[ERROR]**: Invalid field. Available fields: name, title, description, emoji, badges, addfield, removefield", delete_after=5)
+            return
+
+        save_config(config)
+        await ctx.send(f"> Profile updated successfully. Use `{prefix}profile show` to see the changes.", delete_after=5)
+
+    else:
+        profile = config['profile']
+        embed = f"""**{profile['emoji']} {profile['name']}'s Profile | {' '.join(profile['badges'])}**
+
+> **{profile['title']}**
+> {profile['description']}
+
+"""
+        for field in profile['fields']:
+            embed += f"> **{field['name']}:** {field['value']}\n"
+
+        await ctx.send(embed)
+
+@bot.command()
+async def reload(ctx):
+    await ctx.message.delete()
+    
+    try:
+        # Get the path to the start.bat file
+        start_bat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'start.bat')
+        
+        if not os.path.exists(start_bat_path):
+            await ctx.send("> **[ERROR]**: start.bat file not found.", delete_after=5)
+            return
+        
+        # Start the new instance
+        subprocess.Popen([start_bat_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        
+        # Send a message indicating successful reload
+        await ctx.send("> Reloading the bot. Please wait...", delete_after=5)
+        
+        # Close the current instance
+        await bot.close()
+        sys.exit()
+    except Exception as e:
+        await ctx.send(f"> **[ERROR]**: An error occurred while reloading: `{str(e)}`", delete_after=5)
     
 @bot.command()
 async def check(ctx):
@@ -276,7 +368,7 @@ async def check(ctx):
 
 A new version of the SelfBot is available!
 
-:small_orange_diamond: Current version: `v{__version__}`
+:small_orange_diamond: Current version: `v{current_version}`
 :small_blue_diamond: Latest version: `v{latest_version}`
 
 :arrow_up: To update, use the command: `.update`
@@ -290,7 +382,7 @@ Stay up to date for the best experience!
 
 You're running the latest version of the SelfBot.
 
-:small_blue_diamond: Current version: `v{__version__}`
+:small_blue_diamond: Current version: `v{current_version}`
 
 Keep enjoying the latest features!
 """
@@ -308,7 +400,7 @@ async def auto_check_updates():
 
 A new version of the SelfBot is available. Would you like to update?
 
-:small_orange_diamond: Current version: `v{__version__}`
+:small_orange_diamond: Current version: `v{current_version}`
 :small_blue_diamond: Latest version: `v{latest_version}`
 
 :arrow_up: To update, use the command: `.update`
@@ -344,14 +436,37 @@ async def update(ctx):
 
 @bot.command()
 async def dismiss(ctx):
-    global update_message_sent
+    global update_message_sent, update_available
     await ctx.message.delete()
-    await ctx.send("> Update dismissed.", delete_after=5)
-    update_message_sent = False
+    
+    if update_available:
+        config['dismissed_version'] = latest_version
+        save_config(config)
+        update_available = False
+        update_message_sent = False
+        await ctx.send("> Update dismissed. You won't be notified about this version again.", delete_after=5)
+    else:
+        await ctx.send("> There's no pending update to dismiss.", delete_after=5)
+
+def check_for_updates():
+    try:
+        response = requests.get("https://raw.githubusercontent.com/zeozcb/Radon/refs/heads/main/.ver")
+        latest_version = response.text.strip()
+        update_available = latest_version != current_version and latest_version != config.get('dismissed_version')
+        return latest_version, update_available
+    except:
+        return None, False
 
 @bot.command()
 async def uptime(ctx):
     await ctx.message.delete()
+
+    def get_size(bytes, suffix="B"):
+        factor = 1024
+        for unit in ["", "K", "M", "G", "T", "P"]:
+            if bytes < factor:
+                return f"{bytes:.2f}{unit}{suffix}"
+            bytes /= factor
 
     now = datetime.datetime.now(datetime.timezone.utc)
     delta = now - start_time
@@ -366,61 +481,113 @@ async def uptime(ctx):
 
     uptime_stamp = time_format.format(d=days, h=hours, m=minutes, s=seconds)
 
-    embed = discord.Embed(title="🕒 Uptime Information", color=0x00ff00)
-    embed.add_field(name="Bot Uptime", value=uptime_stamp, inline=False)
+    try:
+        embed = f"**UPTIME INFORMATION | Prefix: `{prefix}`**\n\n"
 
-    if config['uptime']['show_system_info']:
-        system_info = f"OS: **{platform.system()} {platform.release()}**\n"
-        system_info += f"Python: **{platform.python_version()}**\n"
-        system_info += f"Discord.py: **{discord.__version__}**"
-        embed.add_field(name="🖥️ System Information", value=system_info, inline=False)
+        if config['uptime'].get('show_system_info', True):
+            embed += ":computer: __System Information__\n"
+            embed += f"OS: `{platform.system()} {platform.release()} ({platform.version()})`\n"
+            embed += f"Architecture: `{platform.machine()}`\n"
+            embed += f"Processor: `{cpuinfo.get_cpu_info()['brand_raw']}`\n"
+            embed += f"Python Version: `{platform.python_version()}`\n"
+            embed += f"Discord.py Version: `{discord.__version__}`\n\n"
 
-    if config['uptime']['show_memory_usage']:
-        memory = psutil.virtual_memory()
-        memory_usage = f"Total: **{memory.total / (1024**3):.2f} GB**\n"
-        memory_usage += f"Used: **{memory.used / (1024**3):.2f} GB ({memory.percent}%)**\n"
-        memory_usage += f"Available: **{memory.available / (1024**3):.2f} GB**"
-        embed.add_field(name="💾 Memory Usage", value=memory_usage, inline=False)
+        if config['uptime'].get('show_memory_usage', True):
+            mem = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            embed += ":floppy_disk: __Memory Information__\n"
+            embed += f"Total: `{get_size(mem.total)}`\n"
+            embed += f"Available: `{get_size(mem.available)}`\n"
+            embed += f"Used: `{get_size(mem.used)} ({mem.percent}%)`\n"
+            embed += f"Swap: `{get_size(swap.total)} (Used: {get_size(swap.used)})`\n\n"
 
-    if config['uptime']['show_cpu_usage']:
-        cpu_usage = f"CPU Usage: **{psutil.cpu_percent()}%**\n"
-        cpu_usage += f"Cores: **{psutil.cpu_count(logical=False)}** (Logical: **{psutil.cpu_count()}**)"
-        embed.add_field(name="🔧 CPU Information", value=cpu_usage, inline=False)
+        if config['uptime'].get('show_cpu_usage', True):
+            embed += ":gear: __CPU Information__\n"
+            embed += f"Physical Cores: `{psutil.cpu_count(logical=False)}`\n"
+            embed += f"Logical Cores: `{psutil.cpu_count(logical=True)}`\n"
+            embed += f"Max Frequency: `{psutil.cpu_freq().max:.2f}Mhz`\n"
+            embed += f"Current Frequency: `{psutil.cpu_freq().current:.2f}Mhz`\n"
+            embed += f"CPU Usage: `{psutil.cpu_percent()}%`\n\n"
 
-    if config['uptime']['show_disk_usage']:
-        disk = psutil.disk_usage('/')
-        disk_usage = f"Total: **{disk.total / (1024**3):.2f} GB**\n"
-        disk_usage += f"Used: **{disk.used / (1024**3):.2f} GB ({disk.percent}%)**\n"
-        disk_usage += f"Free: **{disk.free / (1024**3):.2f} GB**"
-        embed.add_field(name="💽 Disk Usage", value=disk_usage, inline=False)
+        if config['uptime'].get('show_disk_usage', True):
+            embed += ":cd: __Disk Information__\n"
+            partitions = psutil.disk_partitions()
+            for partition in partitions:
+                try:
+                    partition_usage = psutil.disk_usage(partition.mountpoint)
+                    embed += f"Disk {partition.device}:\n"
+                    embed += f"  Total: `{get_size(partition_usage.total)}`\n"
+                    embed += f"  Used: `{get_size(partition_usage.used)} ({partition_usage.percent}%)`\n"
+                except PermissionError:
+                    continue
+            embed += "\n"
 
-    image_path = config['uptime'].get('image', 'img/zeo.gif')
-    if os.path.exists(image_path):
-        file = discord.File(image_path, filename="image.gif")
-        embed.set_image(url="attachment://image.gif")
-        await ctx.send(embed=embed, file=file)
-    else:
-        await ctx.send(embed=embed)
+        if config['uptime'].get('show_network_info', True):
+            embed += ":globe_with_meridians: __Network Information__\n"
+            if_addrs = psutil.net_if_addrs()
+            for interface_name, interface_addresses in if_addrs.items():
+                for addr in interface_addresses:
+                    if str(addr.family) == 'AddressFamily.AF_INET':
+                        embed += f"{interface_name}:\n"
+                        embed += f"  IP Address: `{addr.address}`\n"
+            embed += f"Hostname: `{socket.gethostname()}`\n"
+            embed += f"MAC Address: `{':'.join(re.findall('..', '%012x' % uuid.getnode()))}`\n\n"
+
+        if config['uptime'].get('show_gpu_info', True):
+            embed += ":joystick: __GPU Information__\n"
+            gpus = GPUtil.getGPUs()
+            for i, gpu in enumerate(gpus):
+                embed += f"GPU {i}:\n"
+                embed += f"  Name: `{gpu.name}`\n"
+                embed += f"  Load: `{gpu.load*100}%`\n"
+                embed += f"  Memory: `{gpu.memoryUsed}MB / {gpu.memoryTotal}MB`\n"
+                embed += f"  Temperature: `{gpu.temperature} °C`\n"
+            embed += "\n"
+
+        if config['uptime'].get('show_bot_info', True):
+            embed += ":robot: __Bot Information__\n"
+            embed += f"Bot Uptime: `{uptime_stamp}`\n"
+            embed += f"Guilds: `{len(bot.guilds)}`\n"
+            embed += f"Users: `{len(set(bot.get_all_members()))}`\n"
+            embed += f"Channels: `{len(set(bot.get_all_channels()))}`\n"
+            embed += f"Emojis: `{len(bot.emojis)}`\n\n"
+
+        await ctx.send(embed)
+
+        if config['uptime'].get('image'):
+            await ctx.send(config['uptime']['image'])
+
+    except Exception as e:
+        await ctx.send(f"> **[ERROR]**: An error occurred while sending uptime information: {str(e)}", delete_after=10)
 
 @bot.command()
-async def uptimeconfig(ctx, setting: str, value: str):
+async def uptimeconfig(ctx, setting: str = None, *, value: str = None):
     await ctx.message.delete()
 
-    valid_settings = ['show_system_info', 'show_memory_usage', 'show_cpu_usage', 'show_disk_usage', 'image']
+    valid_settings = [
+        'show_system_info', 'show_memory_usage', 'show_cpu_usage', 'show_disk_usage',
+        'show_network_info', 'show_gpu_info', 'show_bot_info', 'image'
+    ]
+
+    if not setting:
+        current_config = "\n".join([f"> {s}: `{config['uptime'].get(s, 'Not set')}`" for s in valid_settings])
+        await ctx.send(f"**Current Uptime Configuration | Prefix: `{prefix}`**\n\n{current_config}\n\nUse `{prefix}uptimeconfig <setting> <value>` to change a setting.")
+        return
 
     if setting not in valid_settings:
         await ctx.send(f"> **[ERROR]**: Invalid setting. Valid settings are: {', '.join(valid_settings)}", delete_after=5)
         return
 
-    if setting in ['show_system_info', 'show_memory_usage', 'show_cpu_usage', 'show_disk_usage']:
+    if not value:
+        await ctx.send(f"> **[ERROR]**: You must provide a value for the setting.", delete_after=5)
+        return
+
+    if setting != 'image':
         if value.lower() not in ['true', 'false']:
             await ctx.send("> **[ERROR]**: Value must be 'true' or 'false' for boolean settings.", delete_after=5)
             return
         config['uptime'][setting] = value.lower() == 'true'
-    elif setting == 'image':
-        if not os.path.exists(value):
-            await ctx.send("> **[ERROR]**: The specified image file does not exist.", delete_after=5)
-            return
+    else:
         config['uptime']['image'] = value
 
     save_config(config)
@@ -1402,5 +1569,4 @@ async def dmall(ctx, *, message: str="https://discord.gg/PKR7nM9j9U"):
 
     await ctx.send(f"> **[**INFO**]**: DM process completed.\n> Successfully sent: `{success_count}`\n> Failed: `{fail_count}`", delete_after=10)
 
-display_menu()
 bot.run(token)

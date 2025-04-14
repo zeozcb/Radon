@@ -23,6 +23,7 @@ import contextlib
 import subprocess
 import sys
 import shutil
+import inspect
 
 genius = lyricsgenius.Genius("RVKf9sgQop3EokoVK16dVKOav1q9ii9m06gQRJa9xV5zUQE9jNmJbZXOG-xNwHum")
 
@@ -32,7 +33,7 @@ y = Fore.LIGHTYELLOW_EX
 b = Fore.LIGHTBLUE_EX
 w = Fore.LIGHTWHITE_EX
 
-__version__ = "3.2"
+__version__ = "3.2.1"
 
 start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -223,7 +224,7 @@ async def help(ctx):
 
 def check_for_updates():
     try:
-        response = requests.get("https://raw.githubusercontent.com/yourusername/your-repo/main/.ver")
+        response = requests.get("https://raw.githubusercontent.com/zeozcb/Radon/refs/heads/main/.ver")
         latest_version = response.text.strip()
         return latest_version, latest_version != __version__
     except:
@@ -288,7 +289,7 @@ Stay up to date for the best experience!
 
 def update_selfbot():
     try:
-        subprocess.run(["git", "clone", "https://github.com/yourusername/your-repo.git", "temp_update"], check=True)
+        subprocess.run(["git", "clone", "https://github.com/zeozcb/Radon.git", "temp_update"], check=True)
         
         shutil.copy("config/config.json", "temp_update/config/config.json")
         
@@ -312,9 +313,6 @@ async def update(ctx):
 async def dismiss(ctx):
     await ctx.message.delete()
     await ctx.send("> Update dismissed.", delete_after=5)
-
-import psutil
-import platform
 
 @bot.command()
 async def uptime(ctx):
@@ -425,7 +423,7 @@ Current configuration:
         embed = f"""**MY SOCIAL NETWORKS | Prefix: `{prefix}`**\n"""
         for platform, data in config['social_media'].items():
             if data['link']:
-                embed += f"> {data['emoji']} `{data['text']}`\n*{data['link']}*\n"
+                embed += f"> {data['emoji']} [{data['text']}]({data['link']})\n"
 
     await ctx.send(embed)
 
@@ -949,12 +947,14 @@ async def exec(ctx, *, code: str):
 
     try:
         with contextlib.redirect_stdout(str_obj):
-            exec(code)
+            exec_result = eval(code)
+            if inspect.isawaitable(exec_result):
+                exec_result = await exec_result
 
         output = str_obj.getvalue()
 
-        if output:
-            await ctx.send(f"```py\n{output}\n```")
+        if output or exec_result:
+            await ctx.send(f"```py\n{output}\n{exec_result}\n```")
         else:
             await ctx.send("> Code executed successfully, but there was no output.")
     except Exception as e:

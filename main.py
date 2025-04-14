@@ -90,21 +90,21 @@ def selfbot_menu(bot):
 
 bot = commands.Bot(command_prefix=prefix, description='not a selfbot', self_bot=True, help_command=None)
 
+def display_menu():
+    selfbot_menu(bot)
+    print(f"{y}[{Fore.GREEN}!{y}]{w} SelfBot is now online and ready!")
+
 @bot.event
 async def on_ready():
     global update_message_sent, latest_version, update_available
     if platform.system() == "Windows":
         ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{__version__} - Made By a5traa")
-        os.system('cls')
-    else:
-        os.system('clear')
+    
     latest_version, update_available = check_for_updates()
     update_message_sent = False
-    selfbot_menu(bot)
 
     bot.loop.create_task(auto_check_updates())
 
-    latest_version, update_available = check_for_updates()
     if update_available:
         update_message = f"""
 :rotating_light: **SelfBot Update Available!** :rotating_light:
@@ -119,7 +119,7 @@ A new version of the SelfBot is available. Would you like to update?
 
 Stay up to date for the best experience!
 """
-        await bot.user.send(update_message)
+        print(update_message)
 
 @bot.event
 async def on_message(message):
@@ -316,7 +316,7 @@ A new version of the SelfBot is available. Would you like to update?
 
 Stay up to date for the best experience!
 """
-            await bot.user.send(update_message)
+            print(update_message)
 
 def update_selfbot():
     try:
@@ -1402,4 +1402,5 @@ async def dmall(ctx, *, message: str="https://discord.gg/PKR7nM9j9U"):
 
     await ctx.send(f"> **[**INFO**]**: DM process completed.\n> Successfully sent: `{success_count}`\n> Failed: `{fail_count}`", delete_after=10)
 
+display_menu()
 bot.run(token)

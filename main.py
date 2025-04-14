@@ -33,6 +33,10 @@ y = Fore.LIGHTYELLOW_EX
 b = Fore.LIGHTBLUE_EX
 w = Fore.LIGHTWHITE_EX
 
+update_message_sent = False
+latest_version = None
+update_available = False
+
 __version__ = "3.2.1"
 
 start_time = datetime.datetime.now(datetime.timezone.utc)
@@ -88,11 +92,14 @@ bot = commands.Bot(command_prefix=prefix, description='not a selfbot', self_bot=
 
 @bot.event
 async def on_ready():
+    global update_message_sent, latest_version, update_available
     if platform.system() == "Windows":
         ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{__version__} - Made By a5traa")
         os.system('cls')
     else:
         os.system('clear')
+    latest_version, update_available = check_for_updates()
+    update_message_sent = False
     selfbot_menu(bot)
 
     bot.loop.create_task(auto_check_updates())
@@ -116,6 +123,30 @@ Stay up to date for the best experience!
 
 @bot.event
 async def on_message(message):
+    global update_message_sent, latest_version, update_available
+
+    if message.author != bot.user:
+        return
+
+    if message.content.startswith(config['prefix']):
+        if update_available and not update_message_sent:
+            update_message = f"""
+:rotating_light: **SelfBot Update Available!** :rotating_light:
+
+A new version of the SelfBot is available. Would you like to update?
+
+:small_orange_diamond: Current version: `v{__version__}`
+:small_blue_diamond: Latest version: `v{latest_version}`
+
+:arrow_up: To update, use the command: `.update`
+:x: To dismiss this message, use: `.dismiss`
+
+Stay up to date for the best experience!
+"""
+            await message.channel.send(update_message)
+            update_message_sent = True
+
+    await bot.process_commands(message)
     if message.author.id in config["copycat"]["users"]:
         if message.content.startswith(config['prefix']):
             response_message = message.content[len(config['prefix']):]
@@ -305,14 +336,18 @@ def update_selfbot():
 
 @bot.command()
 async def update(ctx):
+    global update_message_sent
     await ctx.message.delete()
     await ctx.send("> Starting update process...", delete_after=5)
     update_selfbot()
+    update_message_sent = False
 
 @bot.command()
 async def dismiss(ctx):
+    global update_message_sent
     await ctx.message.delete()
     await ctx.send("> Update dismissed.", delete_after=5)
+    update_message_sent = False
 
 @bot.command()
 async def uptime(ctx):

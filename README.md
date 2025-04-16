@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/zeozcb/Radon/raw/main/radon-logo.mp4" alt="Radon Logo" width="200">
+  <img src="https://github.com/zeozcb/Radon/raw/main/radon-logo.gif" alt="Radon Logo" width="200">
 </p>
 
 <h1 align="center">Radon - Discord SelfBot</h1>

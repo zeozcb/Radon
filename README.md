@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/zeozcb/Radon/raw/main/radon-logo.gif" alt="Radon Logo" width="200">
+  <img src="./assets/radon-logo.gif" alt="Radon Logo" width="200">
 </p>
 
 <h1 align="center">Radon - Discord SelfBot</h1>
@@ -171,4 +171,4 @@ Radon is licensed under the MIT License. See the [LICENSE](LICENSE) file for det
 
 ## Acknowledgements
 
-Radon is a fork of Discord-SelfBot by @AstraaDev, which was based on the original SelfBot by @humza1400. All credits goes to them.
+Radon is a fork of Discord-SelfBot by @AstraaDev, which was based on the original SelfBot by @humza1400. All credits belongs to them.

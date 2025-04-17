@@ -26,6 +26,16 @@
 
 This SelfBot offers a wide array of commands to enhance your Discord experience. It boasts an intuitive interface, comprehensive help documentation, and regular updates to maintain functionality and efficiency. While some unnecessary commands have been removed, we welcome suggestions for new features via issues or our Discord server.
 
+## What's New!
+
+Just added a bunch of cool stuff to Radon:
+- **Auto-Update System** - Radon now checks for updates daily and lets you know when there's something new
+- **One-Click Updates** - Just type `.update` and you're good to go
+- **Dismiss Updates** - Not ready to update? Just use `.dismiss` to hide the notification
+- **Manual Update Check** - Type `.check` whenever you want to see if there's a new version
+
+I've also fixed some bugs and made everything run smoother. Let me know if you find any issues!
+
 ---
 
 ## Features
@@ -93,7 +103,7 @@ This SelfBot offers a wide array of commands to enhance your Discord experience.
   - `uptimeconfig <setting> <value>`: Configure uptime settings
   - `setsocial <platform> <emoji> <text> <link>`: Set social media links
 
-- **Fun and Games**
+- **Fun**
   - `airplane <LOOP|ONE>`: Display a 9/11 attack animation
   - `dick <@user>`: Show a user's "dick size"
   - `minesweeper <width> <height>`: Play Minesweeper
@@ -129,14 +139,31 @@ This SelfBot offers a wide array of commands to enhance your Discord experience.
    }
 
 2. **Install Radon:**
-   - **Automated:** Run `setup.bat`, then launch the created file.
-   - **Manual:**
+   - **Easiest way:** Download EXE or download install.bat, GIT, Python 3.12 and run bat!
+   - **Manual way:**
      ```bash
      git clone https://github.com/zeozcb/Radon.git
      cd Radon
-     python -m pip install -r requirements.txt
-     python main.py
+     py -m pip install -r requirements.txt
+     py main.py
      ```
+
+## Auto-Update System
+
+I've added a new update system that makes keeping Radon up-to-date super easy:
+
+- Radon checks for updates once a day
+- When there's a new version, you'll see a message like this:
+ 🚨 SelfBot Update Available! 🚨
+  A new version of the SelfBot is available. Would you like to update?
+  🔸 Current version: v1.0.0
+  🔹 Latest version: v1.1.0
+  ⬆️ To update, use the command: .update
+  ❌ To dismiss this message, use: .dismiss
+  Stay up to date for the best experience!
+- Just type `.update` to automatically download and install the latest version
+- If you want to check for updates manually, use `.check`
+- Not ready to update? Use `.dismiss` to hide the notification
 
 ## Remote Command Execution
 
@@ -162,8 +189,9 @@ Configure autoreply messages and targets in `config/config.json`.
 
 ## Contribution and Support
 
-- **Contribute:** Open issues or create pull requests on GitHub.
-- **Support:** Join our Discord Server for help and updates.
+- **Found a bug?** Open an issue on GitHub
+- **Have a cool idea?** Create a pull request or suggest it in an issue
+- **Need help?** Join our Discord Server for support and updates
 
 ## License
 
@@ -171,4 +199,8 @@ Radon is licensed under the MIT License. See the [LICENSE](LICENSE) file for det
 
 ## Acknowledgements
 
-Radon is a fork of Discord-SelfBot by @AstraaDev, which was based on the original SelfBot by @humza1400. All credits belongs to them.
+Radon is a fork of Discord-SelfBot by @AstraaDev, which was based on the original SelfBot by @humza1400. Thanks to them for their awesome work!
+
+---
+
+Made by zeozcb - Star the repo if you like it!

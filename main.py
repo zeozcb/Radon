@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord.ext.commands import CommandNotFound
 import ctypes
 import json
 import os
@@ -39,6 +40,8 @@ except FileNotFoundError:
     current_version = "Unknown"
 
 loop_running = False
+status_animation_running = False
+has_nitro = False
 
 y = Fore.LIGHTYELLOW_EX
 b = Fore.LIGHTBLUE_EX
@@ -60,6 +63,16 @@ def save_config(config):
     with open("config/config.json", "w") as file:
         json.dump(config, file, indent=4)
 
+def get_emoji(emoji_name, default_emoji):
+    if config.get('nitro_emotes', False):
+        custom_emoji = discord.utils.get(bot.emojis, name=emoji_name)
+        return str(custom_emoji) if custom_emoji else default_emoji
+    return default_emoji
+
+if 'nitro_emotes' not in config:
+    config['nitro_emotes'] = False
+    save_config(config)
+
 def selfbot_menu(bot):
     if platform.system() == "Windows":
         os.system('cls')
@@ -73,7 +86,7 @@ def selfbot_menu(bot):
                                             ██║  ██║██║  ██║██████╔╝╚██████╔╝██║ ╚████║
                                             ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═══╝\n""".replace('█', f'{b}█{y}'))
     print(f"""{y}------------------------------------------------------------------------------------------------------------------------
-{w} | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB | Radon {b}|{w} MODIFIED BY ZEOZCB
+{w} Radon {b}|{w} MODIFIED BY ZEOZCB Radon {b}|{w} MODIFIED BY ZEOZCB Radon {b}|{w} MODIFIED BY ZEOZCB Radon {b}|{w} MODIFIED BY ZEOZCB
 {y}------------------------------------------------------------------------------------------------------------------------\n""")
     print(f"""{y}[{b}+{y}]{w} SelfBot Information:\n
 \t{y}[{w}#{y}]{w} Version: v{current_version}
@@ -97,18 +110,20 @@ def selfbot_menu(bot):
 {y}[{Fore.GREEN}!{y}]{w} SelfBot is now online and ready!""")
 
 
-bot = commands.Bot(command_prefix=prefix, description='not a selfbot', self_bot=True, help_command=None)
+bot = commands.Bot(command_prefix=prefix, description='crook', self_bot=True, help_command=None)
 
 @bot.event
 async def on_ready():
-    global update_message_sent, latest_version, update_available
+    global update_message_sent, latest_version, update_available, has_nitro
     if platform.system() == "Windows":
-        ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{current_version} - Made By a5traa")
+        ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{current_version} - Made By zeozcb | Radon")
     
     latest_version, update_available = check_for_updates()
     update_message_sent = False
 
     bot.loop.create_task(auto_check_updates())
+
+    has_nitro = await check_nitro_status()
 
     selfbot_menu(bot)
 
@@ -128,14 +143,71 @@ Stay up to date for the best experience!
 """
         print(update_message)
 
+async def check_nitro_status():
+    headers = {'Authorization': token}
+    async with aiohttp.ClientSession() as session:
+        async with session.get('https://discordapp.com/api/v6/users/@me/billing/subscriptions', headers=headers) as r:
+            if r.status == 200:
+                json = await r.json()
+                return len(json) > 0
+    return False
+
+@bot.command()
+async def nitro(ctx, action: str = None):
+    await safe_delete(ctx.message)
+    
+    if action is None:
+        await ctx.send(f"> **[ERROR]**: Invalid command.\n> __Command__: `{prefix}nitro <enable|disable>`", delete_after=5)
+        return
+    
+    if action.lower() not in ['enable', 'disable']:
+        await ctx.send(f"> **[ERROR]**: Invalid action. Use 'enable' or 'disable'.\n> __Command__: `{prefix}nitro <enable|disable>`", delete_after=5)
+        return
+    
+    if action.lower() == 'enable':
+        if has_nitro:
+            config['nitro_emotes'] = True
+            save_config(config)
+            await ctx.send("> Nitro emotes enabled. You can now use custom emotes in any server.", delete_after=5)
+        else:
+            await ctx.send("> You need to join the official SelfBot server to use emotes without Nitro. Use `.server` to get an invite.", delete_after=5)
+    else:
+        config['nitro_emotes'] = False
+        save_config(config)
+        await ctx.send("> Nitro emotes disabled. Custom emotes will only work in the official SelfBot server.", delete_after=5)
+
+@bot.command()
+async def server(ctx):
+    await ctx.message.delete()
+    await ctx.send("> Join the official SelfBot server: https://discord.gg/8bTgaSkU5r", delete_after=10)
+
 @bot.event
 async def on_message(message):
     global update_message_sent, latest_version, update_available
 
-    if message.author != bot.user:
+    if message.author != bot.user and str(message.author.id) not in config["remote-users"]:
         return
 
-    if message.content.startswith(config['prefix']):
+    if message.author == bot.user and (config.get('nitro_emotes', False) or (not has_nitro and message.guild and message.guild.id == 1279905004181917808)):
+        content = message.content
+        emote_pattern = r'<a?:(\w+):(\d+)>'
+        emotes = re.findall(emote_pattern, content)
+        
+        for name, id in emotes:
+            if has_nitro:
+                continue
+            elif message.guild and message.guild.id == 1279905004181917808:
+                content = content.replace(f'<a:{name}:{id}>', f'<:{name}:{id}>')
+            else:
+                content = content.replace(f'<a:{name}:{id}>', f':{name}:')
+                content = content.replace(f'<:{name}:{id}>', f':{name}:')
+        
+        if content != message.content:
+            await message.delete()
+            await message.channel.send(content)
+            return
+
+    if message.author == bot.user and message.content.startswith(config['prefix']):
         if update_available and not update_message_sent:
             update_message = f"""
 :rotating_light: **SelfBot Update Available!** :rotating_light:
@@ -153,19 +225,18 @@ Stay up to date for the best experience!
             await message.channel.send(update_message)
             update_message_sent = True
 
-    await bot.process_commands(message)
-    if message.author.id in config["copycat"]["users"]:
+    if message.author.id in config.get("copycat", {}).get("users", []) and message.author != bot.user:
         if message.content.startswith(config['prefix']):
             response_message = message.content[len(config['prefix']):]
             await message.reply(response_message)
         else:
             await message.reply(message.content)
 
-    if config["afk"]["enabled"]:
-        if bot.user in message.mentions and message.author != bot.user:
+    if config["afk"]["enabled"] and message.author != bot.user:
+        if bot.user in message.mentions:
             await message.reply(config["afk"]["message"])
             return
-        elif isinstance(message.channel, discord.DMChannel) and message.author != bot.user:
+        elif isinstance(message.channel, discord.DMChannel):
             await message.reply(config["afk"]["message"])
             return
 
@@ -184,84 +255,112 @@ Stay up to date for the best experience!
         await message.channel.send("> SelfBot commands are not allowed here. Thanks.", delete_after=5)
         return
 
-    if message.author != bot.user and str(message.author.id) not in config["remote-users"]:
-        return
-
     await bot.process_commands(message)
 
 @bot.event
 async def on_command_error(ctx, error):
+    if isinstance(error, discord.errors.NotFound):
+        return
     if isinstance(error, commands.CommandNotFound):
         return
+    if isinstance(error, commands.CommandInvokeError):
+        original = error.original
+        if isinstance(original, discord.errors.NotFound):
+            return
+        await ctx.send(f"> **[ERROR]**: {str(original)}", delete_after=5)
+    else:
+        await ctx.send(f"> **[ERROR]**: {str(error)}", delete_after=5)
+
+async def safe_delete(message):
+    try:
+        await message.delete()
+    except discord.errors.NotFound:
+        pass
+
 
 @bot.command(aliases=['h'])
 async def help(ctx):
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.errors.NotFound:
+        pass
 
     help_text = f"""
 **Radon SelfBot | Prefix: `{prefix}`**\n
 **Commands:**\n
-> :space_invader: `{prefix}media` - Shows your social media.
-> :space_invader: `{prefix}social` - Shows your social media.
-> :wrench: `{prefix}changeprefix <prefix>` - Change the bot's prefix.  
-> :x: `{prefix}shutdown` - Stop the selfbot.  
-> :notepad_spiral: `{prefix}uptime` - Returns how long the selfbot has been running.
-> :closed_lock_with_key: `{prefix}remoteuser <ADD|REMOVE> <@user>` - Authorize or remove a user to execute commands remotely.
-> :robot: `{prefix}copycat <ON|OFF> <@user>` - Automatically reply with the same message whenever the mentioned user speaks. 
-> :pushpin: `{prefix}ping` - Returns the bot's latency.
-> :pushpin: `{prefix}pingweb <url>` - Ping a website and return the HTTP status code (e.g., 200 if online).
-> :gear: `{prefix}geoip <ip>` - Looks up the IP's location.
-> :microphone: `{prefix}tts <text>` - Converts text to speech and sends an audio file (.wav).
-> :hash: `{prefix}qr <text>` - Generate a QR code from the provided text and send it as an image.
-> :detective: `{prefix}hidemention <display_part> <hidden_part>` - Hide messages inside other messages.
-> :wrench: `{prefix}edit <message>` - Move the position of the (edited) tag.
-> :arrows_counterclockwise: `{prefix}reverse <message>` - Reverse the letters of a message.
-> :notepad_spiral: `{prefix}gentoken` - Generate an invalid but correctly patterned token.
-> :woozy_face: `{prefix}hypesquad <house>` - Change your HypeSquad badge.
-> :dart: `{prefix}nitro` - Generate a fake Nitro code.
-> :hammer: `{prefix}whremove <webhook_url>` - Remove a webhook.
-> :broom: `{prefix}purge <amount>` - Delete a specific number of messages.
-> :broom: `{prefix}clear` - Clear messages from a channel. 
-> :broom: `{prefix}cleardm <amount>` - Delete DMs with a user.
-> :mag: `{prefix}check` - Check for available updates.
-> :arrow_up: `{prefix}update` - Update the SelfBot to the latest version.
-> :x: `{prefix}dismiss` - Dismiss the update notification."""
+> {get_emoji('supportS', ':space_invader:')} `{prefix}media` - Shows your social media.
+> {get_emoji('supportS', ':space_invader:')} `{prefix}social` - Shows your social media.
+> {get_emoji('moderator', ':wrench:')} `{prefix}changeprefix <prefix>` - Change the bot's prefix.  
+> {get_emoji('info', ':x:')} `{prefix}shutdown` - Stop the selfbot.  
+> {get_emoji('elite', ':notepad_spiral:')} `{prefix}uptime` - Returns how long the selfbot has been running.
+> {get_emoji('owner', ':closed_lock_with_key:')} `{prefix}remoteuser <ADD|REMOVE> <@user>` - Authorize or remove a user to execute commands remotely.
+> {get_emoji('donor', ':robot:')} `{prefix}copycat <ON|OFF> <@user>` - Automatically reply with the same message whenever the mentioned user speaks. 
+> {get_emoji('supportS', ':pushpin:')} `{prefix}ping` - Returns the bot's latency.
+> {get_emoji('supportS', ':pushpin:')} `{prefix}pingweb <url>` - Ping a website and return the HTTP status code (e.g., 200 if online).
+> {get_emoji('moderator', ':gear:')} `{prefix}geoip <ip>` - Looks up the IP's location.
+> {get_emoji('donor', ':microphone:')} `{prefix}tts <text>` - Converts text to speech and sends an audio file (.wav).
+> {get_emoji('info', ':hash:')} `{prefix}qr <text>` - Generate a QR code from the provided text and send it as an image.
+> {get_emoji('elite', ':detective:')} `{prefix}hidemention <display_part> <hidden_part>` - Hide messages inside other messages.
+> {get_emoji('moderator', ':wrench:')} `{prefix}edit <message>` - Move the position of the (edited) tag.
+> {get_emoji('donor', ':arrows_counterclockwise:')} `{prefix}reverse <message>` - Reverse the letters of a message.
+> {get_emoji('elite', ':notepad_spiral:')} `{prefix}gentoken` - Generate an invalid but correctly patterned token.
+> {get_emoji('elite', ':woozy_face:')} `{prefix}hypesquad <house>` - Change your HypeSquad badge.
+> {get_emoji('supportS', ':dart:')} `{prefix}nitro` - Generate a fake Nitro code.
+> {get_emoji('owner', ':hammer:')} `{prefix}whremove <webhook_url>` - Remove a webhook.
+> {get_emoji('moderator', ':broom:')} `{prefix}purge <amount>` - Delete a specific number of messages.
+> {get_emoji('moderator', ':broom:')} `{prefix}clear` - Clear messages from a channel. 
+> {get_emoji('moderator', ':broom:')} `{prefix}cleardm <amount>` - Delete DMs with a user.
+> {get_emoji('supportS', ':mag:')} `{prefix}check` - Check for available updates.
+> {get_emoji('supportS', ':arrow_up:')} `{prefix}update` - Update the SelfBot to the latest version.
+> {get_emoji('info', ':x:')} `{prefix}dismiss` - Dismiss the update notification.
+> {get_emoji('supportS', ':game_die:')} `{prefix}roll <dice>` - Roll dice (e.g., 3d6).
+> {get_emoji('supportS', ':coin:')} `{prefix}coinflip` - Flip a coin.
+> {get_emoji('supportS', ':8ball:')} `{prefix}magicball <question>` - Ask the magic 8-ball a question.
+> {get_emoji('supportS', ':abc:')} `{prefix}emojify <text>` - Convert text to emoji.
+> {get_emoji('supportS', ':upside_down:')} `{prefix}mock <text>` - Mock text by alternating upper and lowercase.
+> {get_emoji('supportS', ':cat:')} `{prefix}uwuify <text>` - Convert text to uwu speak.
+> {get_emoji('supportS', ':zany_face:')} `{prefix}retardify <text>` - Convert text to a "retarded" version.
+> {get_emoji('supportS', ':ribbon:')} `{prefix}femboyify <text>` - Convert text to femboy speak.
+> {get_emoji('supportS', ':ghost:')} `{prefix}ghostping <@user>` - Ghost ping a user.
+> {get_emoji('supportS', ':stop_sign:')} `{prefix}loopstop` - Stop any running loop animations.
+> {get_emoji('supportS', ':detective:')} `{prefix}dox <username>` - Search for potential social media profiles."""
     await ctx.send(help_text)
 
     help_text = f"""
-> :writing_hand: `{prefix}spam <amount> <message>` - Spams a message for a given amount of times.
-> :tools: `{prefix}quickdelete <message>` - Send a message and delete it after 2 seconds.
-> :tools: `{prefix}autoreply <ON|OFF> [@user]` - Enable or disable automatic replies for a user or channel.
-> :zzz: `{prefix}afk <ON|OFF> [message]` - Enable or disable AFK mode. Sends a custom message when receiving a DM or being mentioned.
-> :busts_in_silhouette: `{prefix}fetchmembers` - Retrieve the list of all members in the server.
-> :scroll: `{prefix}firstmessage` - Get the link to the first message in the current channel.
-> :mega: `{prefix}dmall <message>` - Send a message to all members in the server.
-> :mega: `{prefix}sendall <message>` - Send a message to all channels in the server.
-> :busts_in_silhouette: `{prefix}guildicon` - Get the icon of the current server.
-> :space_invader: `{prefix}usericon <@user>` - Get the profile picture of a user.
-> :star: `{prefix}guildbanner` - Get the banner of the current server.
-> :page_facing_up: `{prefix}tokeninfo <token>` - Scrape info with a token.
-> :pager: `{prefix}guildinfo` - Get information about the current server.
-> :memo: `{prefix}guildrename <new_name>` - Rename the server.
-> :video_game: `{prefix}playing <status>` - Set the activity status as "Playing".  
-> :tv: `{prefix}watching <status>` - Set the activity status as "Watching".  
-> :x: `{prefix}stopactivity` - Reset the activity status.
-> :art: `{prefix}ascii <message>` - Convert a message to ASCII art.
-> :airplane: `{prefix}airplane <LOOP|ONE>` - Sends a 9/11 attack.
-> :fire: `{prefix}dick <@user>` - Show the "size" of a user's dick.
-> :x: `{prefix}minesweeper <width> <height>` - Play a game of Minesweeper with custom grid size.
-> :robot: `{prefix}leetspeak <message>` - Speak like a hacker, replacing letters.
-> :musical_note: `{prefix}lyrics <song name or lyrics>` - Search for song lyrics.
-> :computer: `{prefix}exec <python_code>` - Execute python code.
-> :cat: `{prefix}catplay <LOOP|ONE>` - Displays cool cat animation.
-> :mag: `{prefix}dox <username>` - Search for potential social media profiles.
-> :zap: `{prefix}zeo` - Displays cool rulez gif.
-> :tv: `{prefix}streaming <status>` - Set the activity status as streaming.
-> :arrows_counterclockwise: `{prefix}reload` - Reload the bot by restarting the start.bat file.
-> :bust_in_silhouette: `{prefix}profile [show|edit]` - Show or edit your custom profile.
-> :octopus: `{prefix}loopstop` - Stop any running loop animations.
-> :gear: `{prefix}uptimeconfig <setting> <value>` - Configure uptime command settings.
-> :pencil: `{prefix}setsocial <platform> <emoji> <text> <link>` - Set your social media links."""
+> {get_emoji('owner', ':writing_hand:')} `{prefix}spam <amount> <message>` - Spams a message for a given amount of times.
+> {get_emoji('moderator', ':tools:')} `{prefix}quickdelete <message>` - Send a message and delete it after 2 seconds.
+> {get_emoji('moderator', ':tools:')} `{prefix}autoreply <ON|OFF> [@user]` - Enable or disable automatic replies for a user or channel.
+> {get_emoji('elite', ':zzz:')} `{prefix}afk <ON|OFF> [message]` - Enable or disable AFK mode. Sends a custom message when receiving a DM or being mentioned.
+> {get_emoji('donor', ':busts_in_silhouette:')} `{prefix}fetchmembers` - Retrieve the list of all members in the server.
+> {get_emoji('elite', ':scroll:')} `{prefix}firstmessage` - Get the link to the first message in the current channel.
+> {get_emoji('owner', ':mega:')} `{prefix}dmall <message>` - Send a message to all members in the server.
+> {get_emoji('owner', ':mega:')} `{prefix}sendall <message>` - Send a message to all channels in the server.
+> {get_emoji('donor', ':busts_in_silhouette:')} `{prefix}guildicon` - Get the icon of the current server.
+> {get_emoji('supportS', ':space_invader:')} `{prefix}usericon <@user>` - Get the profile picture of a user.
+> {get_emoji('supportS', ':star:')} `{prefix}guildbanner` - Get the banner of the current server.
+> {get_emoji('elite', ':page_facing_up:')} `{prefix}tokeninfo <token>` - Scrape info with a token.
+> {get_emoji('donor', ':pager:')} `{prefix}guildinfo` - Get information about the current server.
+> {get_emoji('owner', ':memo:')} `{prefix}guildrename <new_name>` - Rename the server.
+> {get_emoji('elite', ':video_game:')} `{prefix}playing <status>` - Set the activity status as "Playing".  
+> {get_emoji('elite', ':tv:')} `{prefix}watching <status>` - Set the activity status as "Watching".  
+> {get_emoji('info', ':x:')} `{prefix}stopactivity` - Reset the activity status.
+> {get_emoji('supportS', ':art:')} `{prefix}ascii <message>` - Convert a message to ASCII art.
+> {get_emoji('supportS', ':airplane:')} `{prefix}airplane <LOOP|ONE>` - Sends a 9/11 attack.
+> {get_emoji('supportS', ':fire:')} `{prefix}dick <@user>` - Show the "size" of a user's dick.
+> {get_emoji('info', ':x:')} `{prefix}minesweeper <width> <height>` - Play a game of Minesweeper with custom grid size.
+> {get_emoji('donor', ':robot:')} `{prefix}leetspeak <message>` - Speak like a hacker, replacing letters.
+> {get_emoji('elite', ':musical_note:')} `{prefix}lyrics <song name or lyrics>` - Search for song lyrics.
+> {get_emoji('owner', ':computer:')} `{prefix}exec <python_code>` - Execute python code.
+> {get_emoji('supportS', ':cat:')} `{prefix}catplay <LOOP|ONE>` - Displays cool cat animation.
+> {get_emoji('supportS', ':zap:')} `{prefix}zeo` - Displays cool rulez gif.
+> {get_emoji('elite', ':tv:')} `{prefix}streaming <status>` - Set the activity status as streaming.
+> {get_emoji('donor', ':arrows_counterclockwise:')} `{prefix}reload` - Reload the bot by restarting the start.bat file.
+> {get_emoji('moderator', ':gear:')} `{prefix}uptimeconfig <setting> <value>` - Configure uptime command settings.
+> {get_emoji('owner', ':pencil:')} `{prefix}setsocial <platform> <emoji> <text> <link>` - Set your social media links.
+> {get_emoji('supportS', ':star2:')} `{prefix}nitro <enable|disable>` - Enable or disable Nitro emotes.
+> {get_emoji('supportS', ':door:')} `{prefix}server` - Get an invite to the official SelfBot server.
+> {get_emoji('supportS', ':film_frames:')} `{prefix}animatestatus <frame_time> <frame1>|<frame2>|...` - Animate your status.
+> {get_emoji('supportS', ':stop_sign:')} `{prefix}stopanimation` - Stop the status animation."""
     await ctx.send(help_text)
 
 def check_for_updates():
@@ -272,82 +371,27 @@ def check_for_updates():
     except:
         return None, False
 
-@bot.command()
-async def profile(ctx, action: str = None, *, content: str = None):
+async def send_error(ctx, message, delete_after=5):
     await ctx.message.delete()
-
-    if action not in ['show', 'edit', None]:
-        await ctx.send(f"> **[ERROR]**: Invalid action. Use `show` or `edit`.\n> __Command__: `{prefix}profile [show|edit]`", delete_after=5)
-        return
-
-    if 'profile' not in config:
-        config['profile'] = {
-            'name': ctx.author.name,
-            'title': 'Cool User',
-            'description': 'I am a cool Discord user!',
-            'emoji': '😎',
-            'badges': ['🏆', '🌟'],
-            'fields': [
-                {'name': 'Favorite Game', 'value': 'Minecraft'},
-                {'name': 'Hobby', 'value': 'Coding'}
-            ]
-        }
-        save_config(config)
-
-    if action == 'edit':
-        if not content:
-            await ctx.send(f"> **[ERROR]**: Please provide content to edit.\n> __Command__: `{prefix}profile edit <field> <new_value>`", delete_after=5)
-            return
-
-        field, _, value = content.partition(' ')
-        if field in ['name', 'title', 'description', 'emoji']:
-            config['profile'][field] = value
-        elif field == 'badges':
-            config['profile']['badges'] = value.split()
-        elif field == 'addfield':
-            name, _, field_value = value.partition(' ')
-            config['profile']['fields'].append({'name': name, 'value': field_value})
-        elif field == 'removefield':
-            config['profile']['fields'] = [f for f in config['profile']['fields'] if f['name'] != value]
-        else:
-            await ctx.send(f"> **[ERROR]**: Invalid field. Available fields: name, title, description, emoji, badges, addfield, removefield", delete_after=5)
-            return
-
-        save_config(config)
-        await ctx.send(f"> Profile updated successfully. Use `{prefix}profile show` to see the changes.", delete_after=5)
-
-    else:
-        profile = config['profile']
-        embed = f"""**{profile['emoji']} {profile['name']}'s Profile | {' '.join(profile['badges'])}**
-
-> **{profile['title']}**
-> {profile['description']}
-
-"""
-        for field in profile['fields']:
-            embed += f"> **{field['name']}:** {field['value']}\n"
-
-        await ctx.send(embed)
+    await ctx.send(f"> **[ERROR]**: {message}", delete_after=delete_after)
 
 @bot.command()
 async def reload(ctx):
     await ctx.message.delete()
     
     try:
-        # Get the path to the start.bat file
         start_bat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'start.bat')
         
         if not os.path.exists(start_bat_path):
             await ctx.send("> **[ERROR]**: start.bat file not found.", delete_after=5)
             return
         
-        # Start the new instance
         subprocess.Popen([start_bat_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
         
-        # Send a message indicating successful reload
         await ctx.send("> Reloading the bot. Please wait...", delete_after=5)
         
-        # Close the current instance
+        await asyncio.sleep(2)
+        
         await bot.close()
         sys.exit()
     except Exception as e:
@@ -459,7 +503,10 @@ def check_for_updates():
 
 @bot.command()
 async def uptime(ctx):
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.errors.NotFound:
+        pass
 
     def get_size(bytes, suffix="B"):
         factor = 1024
@@ -482,80 +529,83 @@ async def uptime(ctx):
     uptime_stamp = time_format.format(d=days, h=hours, m=minutes, s=seconds)
 
     try:
-        embed = f"**UPTIME INFORMATION | Prefix: `{prefix}`**\n\n"
+        message = "**UPTIME INFORMATION**\n"
+        message += f"Prefix: {prefix}\n\n"
 
         if config['uptime'].get('show_system_info', True):
-            embed += ":computer: __System Information__\n"
-            embed += f"OS: `{platform.system()} {platform.release()} ({platform.version()})`\n"
-            embed += f"Architecture: `{platform.machine()}`\n"
-            embed += f"Processor: `{cpuinfo.get_cpu_info()['brand_raw']}`\n"
-            embed += f"Python Version: `{platform.python_version()}`\n"
-            embed += f"Discord.py Version: `{discord.__version__}`\n\n"
+            message += f"{get_emoji('computer', ':computer:')} **System Information**\n"
+            message += f"OS: `{platform.system()} {platform.release()} ({platform.version()})`\n"
+            message += f"Architecture: `{platform.machine()}`\n"
+            message += f"Processor: `{cpuinfo.get_cpu_info()['brand_raw']}`\n"
+            message += f"Python Version: `{platform.python_version()}`\n"
+            message += f"Discord.py Version: `{discord.__version__}`\n\n"
 
         if config['uptime'].get('show_memory_usage', True):
             mem = psutil.virtual_memory()
             swap = psutil.swap_memory()
-            embed += ":floppy_disk: __Memory Information__\n"
-            embed += f"Total: `{get_size(mem.total)}`\n"
-            embed += f"Available: `{get_size(mem.available)}`\n"
-            embed += f"Used: `{get_size(mem.used)} ({mem.percent}%)`\n"
-            embed += f"Swap: `{get_size(swap.total)} (Used: {get_size(swap.used)})`\n\n"
+            message += f"{get_emoji('floppy_disk', ':floppy_disk:')} **Memory Information**\n"
+            message += f"Total: `{get_size(mem.total)}`\n"
+            message += f"Available: `{get_size(mem.available)}`\n"
+            message += f"Used: `{get_size(mem.used)} ({mem.percent}%)`\n"
+            message += f"Swap: `{get_size(swap.total)} (Used: {get_size(swap.used)})`\n\n"
 
         if config['uptime'].get('show_cpu_usage', True):
-            embed += ":gear: __CPU Information__\n"
-            embed += f"Physical Cores: `{psutil.cpu_count(logical=False)}`\n"
-            embed += f"Logical Cores: `{psutil.cpu_count(logical=True)}`\n"
-            embed += f"Max Frequency: `{psutil.cpu_freq().max:.2f}Mhz`\n"
-            embed += f"Current Frequency: `{psutil.cpu_freq().current:.2f}Mhz`\n"
-            embed += f"CPU Usage: `{psutil.cpu_percent()}%`\n\n"
+            message += f"{get_emoji('gear', ':gear:')} **CPU Information**\n"
+            message += f"Physical Cores: `{psutil.cpu_count(logical=False)}`\n"
+            message += f"Logical Cores: `{psutil.cpu_count(logical=True)}`\n"
+            message += f"Max Frequency: `{psutil.cpu_freq().max:.2f}Mhz`\n"
+            message += f"Current Frequency: `{psutil.cpu_freq().current:.2f}Mhz`\n"
+            message += f"CPU Usage: `{psutil.cpu_percent()}%`\n\n"
 
         if config['uptime'].get('show_disk_usage', True):
-            embed += ":cd: __Disk Information__\n"
+            message += f"{get_emoji('cd', ':cd:')} **Disk Information**\n"
             partitions = psutil.disk_partitions()
             for partition in partitions:
                 try:
                     partition_usage = psutil.disk_usage(partition.mountpoint)
-                    embed += f"Disk {partition.device}:\n"
-                    embed += f"  Total: `{get_size(partition_usage.total)}`\n"
-                    embed += f"  Used: `{get_size(partition_usage.used)} ({partition_usage.percent}%)`\n"
+                    message += f"Disk {partition.device}:\n"
+                    message += f"  Total: `{get_size(partition_usage.total)}`\n"
+                    message += f"  Used: `{get_size(partition_usage.used)} ({partition_usage.percent}%)`\n"
                 except PermissionError:
                     continue
-            embed += "\n"
+            message += "\n"
 
         if config['uptime'].get('show_network_info', True):
-            embed += ":globe_with_meridians: __Network Information__\n"
+            message += f"{get_emoji('satellite', ':satellite:')} **Network Information**\n"
             if_addrs = psutil.net_if_addrs()
             for interface_name, interface_addresses in if_addrs.items():
                 for addr in interface_addresses:
                     if str(addr.family) == 'AddressFamily.AF_INET':
-                        embed += f"{interface_name}:\n"
-                        embed += f"  IP Address: `{addr.address}`\n"
-            embed += f"Hostname: `{socket.gethostname()}`\n"
-            embed += f"MAC Address: `{':'.join(re.findall('..', '%012x' % uuid.getnode()))}`\n\n"
+                        message += f"{interface_name}:\n"
+                        message += f"  IP Address: `{addr.address}`\n"
+            message += f"Hostname: `{socket.gethostname()}`\n"
+            message += f"MAC Address: `{':'.join(re.findall('..', '%012x' % uuid.getnode()))}`\n\n"
 
         if config['uptime'].get('show_gpu_info', True):
-            embed += ":joystick: __GPU Information__\n"
+            message += f"{get_emoji('joystick', ':joystick:')} **GPU Information**\n"
             gpus = GPUtil.getGPUs()
             for i, gpu in enumerate(gpus):
-                embed += f"GPU {i}:\n"
-                embed += f"  Name: `{gpu.name}`\n"
-                embed += f"  Load: `{gpu.load*100}%`\n"
-                embed += f"  Memory: `{gpu.memoryUsed}MB / {gpu.memoryTotal}MB`\n"
-                embed += f"  Temperature: `{gpu.temperature} °C`\n"
-            embed += "\n"
+                message += f"GPU {i}:\n"
+                message += f"  Name: `{gpu.name}`\n"
+                message += f"  Load: `{gpu.load*100}%`\n"
+                message += f"  Memory: `{gpu.memoryUsed}MB / {gpu.memoryTotal}MB`\n"
+                message += f"  Temperature: `{gpu.temperature} °C`\n"
+            if not gpus:
+                message += "No GPU information available\n"
+            message += "\n"
 
         if config['uptime'].get('show_bot_info', True):
-            embed += ":robot: __Bot Information__\n"
-            embed += f"Bot Uptime: `{uptime_stamp}`\n"
-            embed += f"Guilds: `{len(bot.guilds)}`\n"
-            embed += f"Users: `{len(set(bot.get_all_members()))}`\n"
-            embed += f"Channels: `{len(set(bot.get_all_channels()))}`\n"
-            embed += f"Emojis: `{len(bot.emojis)}`\n\n"
-
-        await ctx.send(embed)
+            message += f"{get_emoji('robot', ':robot:')} **Bot Information**\n"
+            message += f"Bot Uptime: `{uptime_stamp}`\n"
+            message += f"Guilds: `{len(bot.guilds)}`\n"
+            message += f"Users: `{len(set(bot.get_all_members()))}`\n"
+            message += f"Channels: `{len(set(bot.get_all_channels()))}`\n"
+            message += f"Emojis: `{len(bot.emojis)}`\n"
 
         if config['uptime'].get('image'):
-            await ctx.send(config['uptime']['image'])
+            message += f"\n\n{config['uptime']['image']}"
+
+        await ctx.send(message)
 
     except Exception as e:
         await ctx.send(f"> **[ERROR]**: An error occurred while sending uptime information: {str(e)}", delete_after=10)
@@ -666,7 +716,7 @@ async def geoip(ctx, ip: str=None):
         > :robot: `Org`\n*{geo['org']}*
         > :alarm_clock: `Timezone`\n*{geo['timezone']}*
         > :electric_plug: `As`\n*{geo['as']}*"""
-        await ctx.send(embed, file=discord.File("img/astraa.gif"))
+        await ctx.send(embed, file=discord.File("img/zeo.gif"))
     except Exception as e:
         await ctx.send(f'> **[**ERROR**]**: Unable to geolocate ip\n> __Error__: `{str(e)}`', delete_after=5)
 
@@ -832,7 +882,7 @@ async def tokeninfo(ctx, usertoken: str=None):
         > :shield: __Account Security__\n\t2FA/MFA Enabled: `{mfa_enabled}`\n\tFlags: `{flags}`
         > :paperclip: __Other__\n\tLocale: `{locale} ({language})`\n\tEmail Verified: `{verified}`"""
 
-            await ctx.send(embed, file=discord.File("img/astraa.gif"))
+            await ctx.send(embed, file=discord.File("img/zeo.gif"))
         except Exception as e:
             await ctx.send(f'> **[**ERROR**]**: Unable to recover token infos\n> __Error__: `{str(e)}`', delete_after=5)
     else:
@@ -929,7 +979,7 @@ Server Name: `{ctx.guild.name}`\nServer ID: `{ctx.guild.id}`\nCreation Date: `{c
     await ctx.send(embed)
 
 @bot.command()
-async def nitro(ctx):
+async def nitrogen(ctx):
     await ctx.message.delete()
 
     await ctx.send(f"https://discord.gift/{''.join(random.choices(string.ascii_letters + string.digits, k=16))}")
@@ -975,7 +1025,7 @@ async def edit(ctx, *, content: str=None):
 @bot.command(aliases=['911'])
 async def airplane(ctx, mode: str = "ONE"):
     global loop_running
-    await ctx.message.delete()
+    await safe_delete(ctx.message)
 
     frames = [
         f''':man_wearing_turban::airplane:\t\t\t\t:office:''',
@@ -986,22 +1036,25 @@ async def airplane(ctx, mode: str = "ONE"):
         ''':boom::boom::boom:'''
     ]
     
-    sent_message = await ctx.send(frames[0])
+    try:
+        sent_message = await ctx.send(frames[0])
 
-    if mode.upper() == "LOOP":
-        loop_running = True
-        while loop_running:
+        if mode.upper() == "LOOP":
+            loop_running = True
+            while loop_running:
+                for frame in frames:
+                    if not loop_running:
+                        break
+                    await asyncio.sleep(0.2)
+                    await sent_message.edit(content=frame)
+        elif mode.upper() == "ONE":
             for frame in frames:
-                if not loop_running:
-                    break
                 await asyncio.sleep(0.5)
                 await sent_message.edit(content=frame)
-    elif mode.upper() == "ONE":
-        for frame in frames:
-            await asyncio.sleep(0.5)
-            await sent_message.edit(content=frame)
-    else:
-        await ctx.send("> **[ERROR]**: Invalid mode. Use 'LOOP' or 'ONE'.", delete_after=5)
+        else:
+            await ctx.send("> **[ERROR]**: Invalid mode. Use 'LOOP' or 'ONE'.", delete_after=5)
+    except discord.errors.NotFound:
+        loop_running = False
 
 @bot.command(aliases=['kitty'])
 async def catplay(ctx, mode: str = "ONE"):
@@ -1027,7 +1080,7 @@ async def catplay(ctx, mode: str = "ONE"):
             for frame in frames:
                 if not loop_running:
                     break
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(0.2)
                 await sent_message.edit(content=frame)
     elif mode.upper() == "ONE":
         for frame in frames:
@@ -1037,11 +1090,175 @@ async def catplay(ctx, mode: str = "ONE"):
         await ctx.send("> **[ERROR]**: Invalid mode. Use 'LOOP' or 'ONE'.", delete_after=5)
 
 @bot.command()
+async def animatestatus(ctx, frame_time: float = None, *, frames: str = None):
+    global status_animation_running
+    await ctx.message.delete()
+
+    if status_animation_running:
+        await ctx.send("> An animation is already running. Use `.stopanimation` to stop it first.", delete_after=5)
+        return
+
+    if frame_time is None or frames is None:
+        help_message = f"""
+**Animate Status Command | Prefix: `{prefix}`**
+
+Usage: `{prefix}animatestatus <frame_time> <frame1>|<frame2>|<frame3>...`
+
+Parameters:
+• `frame_time`: Time in seconds between each frame (e.g., 2.0)
+• `frames`: Status messages separated by `|`
+
+Example:
+`{prefix}animatestatus 2.0 Hello|World|Discord|SelfBot`
+
+This will change your status every 2 seconds between "Hello", "World", "Discord", and "SelfBot".
+
+To stop the animation, use: `{prefix}stopanimation`
+"""
+        await ctx.send(help_message, delete_after=30)
+        return
+
+    if not frames:
+        await ctx.send(f"> **[ERROR]**: Invalid command.\n> __Command__: `{prefix}animatestatus <frame_time> <frame1>|<frame2>|<frame3>...`", delete_after=5)
+        return
+
+    frame_list = frames.split('|')
+    if len(frame_list) < 2:
+        await ctx.send(f"> **[ERROR]**: Please provide at least two frames separated by '|'.", delete_after=5)
+        return
+
+    status_animation_running = True
+    await ctx.send(f"> Status animation started with {len(frame_list)} frames and {frame_time} seconds per frame.", delete_after=5)
+
+    while status_animation_running:
+        for frame in frame_list:
+            if not status_animation_running:
+                break
+            await bot.change_presence(status=discord.Status.online, activity=discord.CustomActivity(name=frame))
+            await asyncio.sleep(frame_time)
+
+    await bot.change_presence(status=discord.Status.online, activity=None)  
+
+@bot.command()
+async def stopanimation(ctx):
+    global status_animation_running
+    await ctx.message.delete()
+    status_animation_running = False
+    await ctx.send("> Status animation stopped.", delete_after=5)
+
+@bot.command(aliases=['8ball'])
+async def magicball(ctx, *, question: str = None):
+    await ctx.message.delete()
+    
+    if not question:
+        await ctx.send("> **[ERROR]**: Please ask a question.\n> __Command__: `8ball <question>`", delete_after=5)
+        return
+    
+    responses = [
+        "It is certain.", "It is decidedly so.", "Without a doubt.", "Yes - definitely.",
+        "You may rely on it.", "As I see it, yes.", "Most likely.", "Outlook good.",
+        "Yes.", "Signs point to yes.", "Reply hazy, try again.", "Ask again later.",
+        "Better not tell you now.", "Cannot predict now.", "Concentrate and ask again.",
+        "Don't count on it.", "My reply is no.", "My sources say no.",
+        "Outlook not so good.", "Very doubtful."
+    ]
+    
+    response = random.choice(responses)
+    await ctx.send(f"> **Question:** {question}\n> **Magic 8-Ball says:** {response}")
+
+@bot.command(aliases=['flip', 'coin'])
+async def coinflip(ctx):
+    await ctx.message.delete()
+    
+    result = random.choice(['Heads', 'Tails'])
+    await ctx.send(f"> The coin landed on: **{result}**!")
+
+@bot.command(aliases=['dice'])
+async def roll(ctx, dice: str = "1d6"):
+    await ctx.message.delete()
+    
+    try:
+        rolls, limit = map(int, dice.split('d'))
+    except Exception:
+        await ctx.send("> **[ERROR]**: Format has to be in NdN!\n> __Example__: `roll 3d6`", delete_after=5)
+        return
+
+    results = [random.randint(1, limit) for _ in range(rolls)]
+    await ctx.send(f"> 🎲 Rolling {dice}:\n> Results: {', '.join(map(str, results))}\n> Total: {sum(results)}")
+
+@bot.command()
+async def emojify(ctx, *, text: str):
+    await ctx.message.delete()
+    
+    emojis = {
+        'a': '🅰️', 'b': '🅱️', 'c': '©️', 'd': '🇩', 'e': '3️⃣', 'f': '🎏',
+        'g': '🇬', 'h': '♓', 'i': 'ℹ️', 'j': '🗾', 'k': '🇰', 'l': '🇱',
+        'm': 'Ⓜ️', 'n': '🇳', 'o': '🅾️', 'p': '🅿️', 'q': '🇶', 'r': '®️',
+        's': '💲', 't': '✝️', 'u': '⛎', 'v': '♈', 'w': '〰️', 'x': '❌',
+        'y': '🌱', 'z': '💤'
+    }
+    
+    emojified = ''.join(emojis.get(char.lower(), char) for char in text)
+    await ctx.send(emojified)
+
+@bot.command()
+async def mock(ctx, *, text: str):
+    await ctx.message.delete()
+    
+    mocked = ''.join(char.upper() if i % 2 == 0 else char.lower() for i, char in enumerate(text))
+    await ctx.send(f"{mocked} 🥴")
+
+@bot.command()
+async def uwuify(ctx, *, text: str):
+    await ctx.message.delete()
+    
+    uwu_text = text.replace('r', 'w').replace('l', 'w').replace('R', 'W').replace('L', 'W')
+    uwu_text = uwu_text.replace('th', 'd').replace('Th', 'D')
+    uwu_text += " " + random.choice(["uwu", "owo", ">w<", "^w^"])
+    
+    await ctx.send(uwu_text)
+
+@bot.command()
+async def retardify(ctx, *, text: str):
+    await ctx.message.delete()
+    
+    retardified = ''.join(c.upper() if i % 2 == 0 else c.lower() for i, c in enumerate(text))
+    retardified = retardified.replace('l', 'w').replace('r', 'w')
+    
+    await ctx.send(f"{retardified} 🥴")
+
+@bot.command()
+async def femboyify(ctx, *, text: str):
+    await ctx.message.delete()
+    
+    femboy_prefixes = ["uwu", "owo", ">w<", "^-^", "nya~"]
+    femboy_suffixes = ["❤️", "💖", "🌸", "✨", "🎀"]
+    
+    femboyified = text.lower()
+    femboyified = femboyified.replace('r', 'w').replace('l', 'w')
+    femboyified = femboyified.replace('th', 'd')
+    femboyified = f"{random.choice(femboy_prefixes)} {femboyified} {random.choice(femboy_suffixes)}"
+    
+    await ctx.send(femboyified)
+
+@bot.command()
+async def ghostping(ctx, user: discord.User):
+    await ctx.message.delete()
+    
+    message = await ctx.send(f"{user.mention}")
+    await asyncio.sleep(0.1)
+    await message.delete()
+
+@bot.command()
 async def loopstop(ctx):
     global loop_running
     await ctx.message.delete()
-    loop_running = False
-    await ctx.send("> Animation loop stopped.", delete_after=5)
+    
+    if loop_running:
+        loop_running = False
+        await ctx.send("> Animation loop stopped.", delete_after=5)
+    else:
+        await ctx.send("> No animation loop is currently running.", delete_after=5)
 
 @bot.command(aliases=['doxx', 'userinfo'])
 async def dox(ctx, username: str = None):

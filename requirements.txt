@@ -1,8 +1,12 @@
-requests
+discord.py
 colorama
-discord.py-self
+requests
+asyncio
 gtts
 qrcode
 pyfiglet
-psutil
+aiohttp
 lyricsgenius
+psutil
+py-cpuinfo
+GPUtil

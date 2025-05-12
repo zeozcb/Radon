@@ -1,7 +1,8 @@
+# RADON / https://github.com/zeozcb/Radon
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import CommandNotFound
-import ctypes
 import json
 import os
 import random
@@ -31,10 +32,13 @@ import socket
 import uuid
 import re
 
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_PATH)
+
 genius = lyricsgenius.Genius("RVKf9sgQop3EokoVK16dVKOav1q9ii9m06gQRJa9xV5zUQE9jNmJbZXOG-xNwHum")
 
 try:
-    with open('.ver', 'r') as ver_file:
+    with open(os.path.join(BASE_PATH, '.ver'), 'r') as ver_file:
         current_version = ver_file.read().strip()
 except FileNotFoundError:
     current_version = "Unknown"
@@ -53,24 +57,71 @@ update_available = False
 
 start_time = datetime.datetime.now(datetime.timezone.utc)
 
-with open("config/config.json", "r") as file:
-    config = json.load(file)
-    token = config.get("token")
-    prefix = config.get("prefix")
-    message_generator = itertools.cycle(config["autoreply"]["messages"])
+config_path = os.path.join(BASE_PATH, "config", "config.json")
+
+def load_config():
+    try:
+        with open(config_path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
+        sys.exit(1)
+    except UnicodeDecodeError:
+        try:
+            with open(config_path, "r", encoding="utf-8-sig") as file:
+                return json.load(file)
+        except Exception as e:
+            print(f"Error reading config file: {e}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error reading config file: {e}")
+        sys.exit(1)
+
+config = load_config()
+
+def create_message_generator():
+    messages = config["autoreply"]["messages"]
+    while True:
+        for message in messages:
+            yield message
+
+message_generator = create_message_generator()
+
+if "tokens" in config and len(config["tokens"]) > 0:
+    token = config["tokens"][0]["token"]
+    prefix = config["tokens"][0]["prefix"]
+else:
+    token = None
+    prefix = "."
+
+if "autoreply" not in config or "messages" not in config["autoreply"]:
+    config["autoreply"] = {"messages": ["Hello! I'm currently AFK.", "Hi there! I'm currently AFK."], "channels": [], "users": []}
 
 def save_config(config):
-    with open("config/config.json", "w") as file:
-        json.dump(config, file, indent=4)
+    try:
+        with open(config_path, "w", encoding="utf-8") as file:
+            json.dump(config, file, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving config file: {e}")
 
 def get_emoji(emoji_name, default_emoji):
     if config.get('nitro_emotes', False):
         custom_emoji = discord.utils.get(bot.emojis, name=emoji_name)
         return str(custom_emoji) if custom_emoji else default_emoji
+    elif not has_nitro and bot.get_guild(1359951405057704150):
+        custom_emoji = discord.utils.get(bot.get_guild(1359951405057704150).emojis, name=emoji_name)
+        return str(custom_emoji) if custom_emoji else default_emoji
     return default_emoji
 
 if 'nitro_emotes' not in config:
     config['nitro_emotes'] = False
+    save_config(config)
+
+if 'advertise_delay' not in config:
+    config['advertise_delay'] = {
+        'min': 2,
+        'max': 4
+    }
     save_config(config)
 
 def selfbot_menu(bot):
@@ -94,7 +145,7 @@ def selfbot_menu(bot):
 \t{y}[{w}#{y}]{w} Cached Users: {len(bot.users)}
 \t{y}[{w}#{y}]{w} Guilds Connected: {len(bot.guilds)}\n\n
 {y}[{b}+{y}]{w} Settings Overview:\n
-\t{y}[{w}#{y}]{w} SelfBot Prefix: {prefix}
+\t{y}[{w}#{y}]{w} SelfBot Prefix: {bot.command_prefix}
 \t{y}[{w}#{y}]{w} Remote Users Configured:""")
     if config["remote-users"]:
         for i, user_id in enumerate(config["remote-users"], start=1):
@@ -116,6 +167,7 @@ bot = commands.Bot(command_prefix=prefix, description='crook', self_bot=True, he
 async def on_ready():
     global update_message_sent, latest_version, update_available, has_nitro
     if platform.system() == "Windows":
+        import ctypes
         ctypes.windll.kernel32.SetConsoleTitleW(f"SelfBot v{current_version} - Made By zeozcb | Radon")
     
     latest_version, update_available = check_for_updates()
@@ -154,7 +206,7 @@ async def check_nitro_status():
 
 @bot.command()
 async def nitro(ctx, action: str = None):
-    await safe_delete(ctx.message)
+    await ctx.message.delete()
     
     if action is None:
         await ctx.send(f"> **[ERROR]**: Invalid command.\n> __Command__: `{prefix}nitro <enable|disable>`", delete_after=5)
@@ -188,7 +240,7 @@ async def on_message(message):
     if message.author != bot.user and str(message.author.id) not in config["remote-users"]:
         return
 
-    if message.author == bot.user and (config.get('nitro_emotes', False) or (not has_nitro and message.guild and message.guild.id == 1279905004181917808)):
+    if message.author == bot.user and (config.get('nitro_emotes', False) or (not has_nitro and message.guild and message.guild.id == 1359951405057704150)):
         content = message.content
         emote_pattern = r'<a?:(\w+):(\d+)>'
         emotes = re.findall(emote_pattern, content)
@@ -196,7 +248,7 @@ async def on_message(message):
         for name, id in emotes:
             if has_nitro:
                 continue
-            elif message.guild and message.guild.id == 1279905004181917808:
+            elif message.guild and message.guild.id == 1359951405057704150:
                 content = content.replace(f'<a:{name}:{id}>', f'<:{name}:{id}>')
             else:
                 content = content.replace(f'<a:{name}:{id}>', f':{name}:')
@@ -207,7 +259,7 @@ async def on_message(message):
             await message.channel.send(content)
             return
 
-    if message.author == bot.user and message.content.startswith(config['prefix']):
+    if message.author == bot.user and message.content.startswith(bot.command_prefix):
         if update_available and not update_message_sent:
             update_message = f"""
 :rotating_light: **SelfBot Update Available!** :rotating_light:
@@ -226,8 +278,8 @@ Stay up to date for the best experience!
             update_message_sent = True
 
     if message.author.id in config.get("copycat", {}).get("users", []) and message.author != bot.user:
-        if message.content.startswith(config['prefix']):
-            response_message = message.content[len(config['prefix']):]
+        if message.content.startswith(bot.command_prefix):
+            response_message = message.content[len(bot.command_prefix):]
             await message.reply(response_message)
         else:
             await message.reply(message.content)
@@ -250,7 +302,7 @@ Stay up to date for the best experience!
             await message.reply(autoreply_message)
             return
     
-    if message.guild and message.guild.id == 1279905004181917808 and message.content.startswith(config['prefix']):
+    if message.guild and message.guild.id == 1359951405057704150 and message.content.startswith(bot.command_prefix):
         await message.delete()
         await message.channel.send("> SelfBot commands are not allowed here. Thanks.", delete_after=5)
         return
@@ -279,89 +331,188 @@ async def safe_delete(message):
 
 
 @bot.command(aliases=['h'])
-async def help(ctx):
+async def help(ctx, option: str = None, *, query: str = None):
     try:
         await ctx.message.delete()
     except discord.errors.NotFound:
         pass
+    
+    command_categories = {
+        "general": {
+            "help": "Displays this help message",
+            "ping": "Check the bot's latency",
+            "uptime": "Shows the bot's uptime and system info",
+            "uptimeconfig": "Configure what information is shown in uptime command",
+            "changeprefix": "Change the bot's command prefix",
+            "shutdown": "Shut down the selfbot",
+            "reload": "Reload the selfbot",
+            "check": "Check for selfbot updates",
+            "update": "Update the selfbot to the latest version",
+            "dismiss": "Dismiss update notification",
+            "server": "Get an invite to the official server",
+            "nitro": "Configure nitro emote settings",
+        },
+        "messaging": {
+            "quickdelete": "Send a message that deletes after 2 seconds",
+            "hidemention": "Hide a message behind a mention",
+            "edit": "Send a message that can be edited",
+            "clear": "Send a message that clears the chat visually",
+            "emojify": "Convert text to emoji characters",
+            "reverse": "Reverse the given text",
+            "leetspeak": "Convert text to leet speak",
+            "uwuify": "UwU-ify your message",
+            "retardify": "Make your text look retarded",
+            "femboyify": "Make your text look like it's from a femboy",
+            "ascii": "Convert text to ASCII art",
+            "mock": "MoCk TeXt LiKe ThIs",
+            "tts": "Send a text-to-speech message as an audio file",
+        },
+        "social": {
+            "media": "Show your social media links",
+            "social": "Alias for media command",
+            "setsocial": "Set your social media details",
+            "dox": "Look up a username across platforms (informational only)",
+            "geoip": "Look up location from an IP address",
+        },
+        "utility": {
+            "qr": "Generate a QR code from text",
+            "pingweb": "Check if a website is online",
+            "remoteuser": "Add or remove users who can control your selfbot",
+            "copycat": "Copy messages from a specific user",
+            "autoreply": "Set up automatic replies to users or in channels",
+            "afk": "Toggle AFK mode with custom message",
+            "firstmessage": "Get a link to the first message in a channel",
+            "usericon": "Get a user's avatar",
+            "guildicon": "Get the server's icon",
+            "guildbanner": "Get the server's banner",
+            "guildrename": "Rename a server (if you have permission)",
+            "guildinfo": "Get information about the current server",
+            "tokeninfo": "Get information from a Discord token",
+            "gentoken": "Generate a fake Discord token",
+            "hypesquad": "Change your HypeSquad house",
+        },
+        "fun": {
+            "airplane": "Show 9/11 animation",
+            "catplay": "Show a cat animation",
+            "coinflip": "Flip a coin",
+            "magicball": "Ask the magic 8-ball a question",
+            "roll": "Roll dice (e.g., 2d6)",
+            "minesweeper": "Play minesweeper in Discord",
+            "dick": "Show the size of someone's 'member'",
+            "animatestatus": "Create an animated custom status",
+            "stopanimation": "Stop any running animation",
+            "loopstop": "Stop any animation loop",
+            "nitrogen": "Generate a fake Nitro gift link",
+        },
+        "trolling": {
+            "discordupdate": "Send a fake Discord update message",
+            "terminate": "Send a fake account termination message",
+            "raidalert": "Send a fake raid alert message",
+            "nitroexpire": "Send a fake Nitro expiration notice",
+            "ownertransfer": "Send a fake ownership transfer message",
+            "staffwarning": "Send a fake Discord staff warning",
+            "serverdelete": "Send a fake server deletion message",
+            "fakehack": "Pretend to hack someone",
+            "fakeban": "Send a fake ban message",
+            "fakemute": "Send a fake mute message",
+            "fakenitro": "Send a fake Nitro gift",
+            "fakeverify": "Send a fake account verification message",
+            "fakepayment": "Send a fake payment confirmation",
+            "fakegiveaway": "Start a fake giveaway",
+            "ghostping": "Ghost ping a user",
+        },
+        "spam": {
+            "spam": "Send multiple messages",
+            "sendall": "Send a message to all channels in a server",
+            "dmall": "DM all members in a server",
+            "advertise": "Advertise in specific channels across servers",
+            "setdelay": "Set delay for the advertise command",
+        },
+        "status": {
+            "playing": "Set your status to playing a game",
+            "streaming": "Set your status to streaming",
+            "stopactivity": "Stop any activity status",
+        },
+        "server": {
+            "fetchmembers": "Get a list of all members in the server",
+            "purge": "Delete multiple messages (requires permissions)",
+            "whremove": "Delete a webhook",
+        },
+        "python": {
+            "exec": "Execute Python code",
+        },
+        "other": {
+            "lyrics": "Search for song lyrics",
+            "zeo": "Send a gif",
+        }
+    }
+    
+    if option and option.lower() == "small":
+        command_list = []
+        for category, commands in command_categories.items():
+            for cmd, desc in commands.items():
+                command_list.append(f"{prefix}{cmd}")
+        
+        chunks = [command_list[i:i+20] for i in range(0, len(command_list), 20)]
+        for chunk in chunks:
+            await ctx.send(f"```{', '.join(chunk)}```")
+        return
+    
+    elif option and option.lower() == "search":
+        if not query:
+            await ctx.send(f"> **[ERROR]**: Please provide a search query.\n> __Command__: `{prefix}help search <query>`", delete_after=5)
+            return
+        
+        search_results = []
+        query = query.lower()
+        
+        if query in command_categories:
+            await ctx.send(f"**Commands in category '{query}':**")
+            commands_text = ""
+            for cmd, desc in command_categories[query].items():
+                commands_text += f"> `{prefix}{cmd}` - {desc}\n"
+            
+            chunks = [commands_text[i:i+1900] for i in range(0, len(commands_text), 1900)]
+            for chunk in chunks:
+                await ctx.send(chunk)
+            return
+        
+        for category, commands in command_categories.items():
+            for cmd, desc in commands.items():
+                if query in cmd.lower() or query in desc.lower():
+                    search_results.append(f"> `{prefix}{cmd}` - {desc} **[{category}]**")
+        
+        if search_results:
+            await ctx.send(f"**Search results for '{query}':**")
+            chunks = [search_results[i:i+15] for i in range(0, len(search_results), 15)]
+            for chunk in chunks:
+                await ctx.send("\n".join(chunk))
+        else:
+            await ctx.send(f"> No commands found matching '{query}'.")
+        return
+    
+    help_intro = f"""```yaml
+Radon SelfBot | Prefix: {prefix}
+```
+> Use `{prefix}help small` for a compact command list
+> Use `{prefix}help search <query>` to search for specific commands
 
-    help_text = f"""
-**Radon SelfBot | Prefix: `{prefix}`**\n
-**Commands:**\n
-> {get_emoji('supportS', ':space_invader:')} `{prefix}media` - Shows your social media.
-> {get_emoji('supportS', ':space_invader:')} `{prefix}social` - Shows your social media.
-> {get_emoji('moderator', ':wrench:')} `{prefix}changeprefix <prefix>` - Change the bot's prefix.  
-> {get_emoji('info', ':x:')} `{prefix}shutdown` - Stop the selfbot.  
-> {get_emoji('elite', ':notepad_spiral:')} `{prefix}uptime` - Returns how long the selfbot has been running.
-> {get_emoji('owner', ':closed_lock_with_key:')} `{prefix}remoteuser <ADD|REMOVE> <@user>` - Authorize or remove a user to execute commands remotely.
-> {get_emoji('donor', ':robot:')} `{prefix}copycat <ON|OFF> <@user>` - Automatically reply with the same message whenever the mentioned user speaks. 
-> {get_emoji('supportS', ':pushpin:')} `{prefix}ping` - Returns the bot's latency.
-> {get_emoji('supportS', ':pushpin:')} `{prefix}pingweb <url>` - Ping a website and return the HTTP status code (e.g., 200 if online).
-> {get_emoji('moderator', ':gear:')} `{prefix}geoip <ip>` - Looks up the IP's location.
-> {get_emoji('donor', ':microphone:')} `{prefix}tts <text>` - Converts text to speech and sends an audio file (.wav).
-> {get_emoji('info', ':hash:')} `{prefix}qr <text>` - Generate a QR code from the provided text and send it as an image.
-> {get_emoji('elite', ':detective:')} `{prefix}hidemention <display_part> <hidden_part>` - Hide messages inside other messages.
-> {get_emoji('moderator', ':wrench:')} `{prefix}edit <message>` - Move the position of the (edited) tag.
-> {get_emoji('donor', ':arrows_counterclockwise:')} `{prefix}reverse <message>` - Reverse the letters of a message.
-> {get_emoji('elite', ':notepad_spiral:')} `{prefix}gentoken` - Generate an invalid but correctly patterned token.
-> {get_emoji('elite', ':woozy_face:')} `{prefix}hypesquad <house>` - Change your HypeSquad badge.
-> {get_emoji('supportS', ':dart:')} `{prefix}nitro` - Generate a fake Nitro code.
-> {get_emoji('owner', ':hammer:')} `{prefix}whremove <webhook_url>` - Remove a webhook.
-> {get_emoji('moderator', ':broom:')} `{prefix}purge <amount>` - Delete a specific number of messages.
-> {get_emoji('moderator', ':broom:')} `{prefix}clear` - Clear messages from a channel. 
-> {get_emoji('moderator', ':broom:')} `{prefix}cleardm <amount>` - Delete DMs with a user.
-> {get_emoji('supportS', ':mag:')} `{prefix}check` - Check for available updates.
-> {get_emoji('supportS', ':arrow_up:')} `{prefix}update` - Update the SelfBot to the latest version.
-> {get_emoji('info', ':x:')} `{prefix}dismiss` - Dismiss the update notification.
-> {get_emoji('supportS', ':game_die:')} `{prefix}roll <dice>` - Roll dice (e.g., 3d6).
-> {get_emoji('supportS', ':coin:')} `{prefix}coinflip` - Flip a coin.
-> {get_emoji('supportS', ':8ball:')} `{prefix}magicball <question>` - Ask the magic 8-ball a question.
-> {get_emoji('supportS', ':abc:')} `{prefix}emojify <text>` - Convert text to emoji.
-> {get_emoji('supportS', ':upside_down:')} `{prefix}mock <text>` - Mock text by alternating upper and lowercase.
-> {get_emoji('supportS', ':cat:')} `{prefix}uwuify <text>` - Convert text to uwu speak.
-> {get_emoji('supportS', ':zany_face:')} `{prefix}retardify <text>` - Convert text to a "retarded" version.
-> {get_emoji('supportS', ':ribbon:')} `{prefix}femboyify <text>` - Convert text to femboy speak.
-> {get_emoji('supportS', ':ghost:')} `{prefix}ghostping <@user>` - Ghost ping a user.
-> {get_emoji('supportS', ':stop_sign:')} `{prefix}loopstop` - Stop any running loop animations.
-> {get_emoji('supportS', ':detective:')} `{prefix}dox <username>` - Search for potential social media profiles."""
-    await ctx.send(help_text)
-
-    help_text = f"""
-> {get_emoji('owner', ':writing_hand:')} `{prefix}spam <amount> <message>` - Spams a message for a given amount of times.
-> {get_emoji('moderator', ':tools:')} `{prefix}quickdelete <message>` - Send a message and delete it after 2 seconds.
-> {get_emoji('moderator', ':tools:')} `{prefix}autoreply <ON|OFF> [@user]` - Enable or disable automatic replies for a user or channel.
-> {get_emoji('elite', ':zzz:')} `{prefix}afk <ON|OFF> [message]` - Enable or disable AFK mode. Sends a custom message when receiving a DM or being mentioned.
-> {get_emoji('donor', ':busts_in_silhouette:')} `{prefix}fetchmembers` - Retrieve the list of all members in the server.
-> {get_emoji('elite', ':scroll:')} `{prefix}firstmessage` - Get the link to the first message in the current channel.
-> {get_emoji('owner', ':mega:')} `{prefix}dmall <message>` - Send a message to all members in the server.
-> {get_emoji('owner', ':mega:')} `{prefix}sendall <message>` - Send a message to all channels in the server.
-> {get_emoji('donor', ':busts_in_silhouette:')} `{prefix}guildicon` - Get the icon of the current server.
-> {get_emoji('supportS', ':space_invader:')} `{prefix}usericon <@user>` - Get the profile picture of a user.
-> {get_emoji('supportS', ':star:')} `{prefix}guildbanner` - Get the banner of the current server.
-> {get_emoji('elite', ':page_facing_up:')} `{prefix}tokeninfo <token>` - Scrape info with a token.
-> {get_emoji('donor', ':pager:')} `{prefix}guildinfo` - Get information about the current server.
-> {get_emoji('owner', ':memo:')} `{prefix}guildrename <new_name>` - Rename the server.
-> {get_emoji('elite', ':video_game:')} `{prefix}playing <status>` - Set the activity status as "Playing".  
-> {get_emoji('elite', ':tv:')} `{prefix}watching <status>` - Set the activity status as "Watching".  
-> {get_emoji('info', ':x:')} `{prefix}stopactivity` - Reset the activity status.
-> {get_emoji('supportS', ':art:')} `{prefix}ascii <message>` - Convert a message to ASCII art.
-> {get_emoji('supportS', ':airplane:')} `{prefix}airplane <LOOP|ONE>` - Sends a 9/11 attack.
-> {get_emoji('supportS', ':fire:')} `{prefix}dick <@user>` - Show the "size" of a user's dick.
-> {get_emoji('info', ':x:')} `{prefix}minesweeper <width> <height>` - Play a game of Minesweeper with custom grid size.
-> {get_emoji('donor', ':robot:')} `{prefix}leetspeak <message>` - Speak like a hacker, replacing letters.
-> {get_emoji('elite', ':musical_note:')} `{prefix}lyrics <song name or lyrics>` - Search for song lyrics.
-> {get_emoji('owner', ':computer:')} `{prefix}exec <python_code>` - Execute python code.
-> {get_emoji('supportS', ':cat:')} `{prefix}catplay <LOOP|ONE>` - Displays cool cat animation.
-> {get_emoji('supportS', ':zap:')} `{prefix}zeo` - Displays cool rulez gif.
-> {get_emoji('elite', ':tv:')} `{prefix}streaming <status>` - Set the activity status as streaming.
-> {get_emoji('donor', ':arrows_counterclockwise:')} `{prefix}reload` - Reload the bot by restarting the start.bat file.
-> {get_emoji('moderator', ':gear:')} `{prefix}uptimeconfig <setting> <value>` - Configure uptime command settings.
-> {get_emoji('owner', ':pencil:')} `{prefix}setsocial <platform> <emoji> <text> <link>` - Set your social media links.
-> {get_emoji('supportS', ':star2:')} `{prefix}nitro <enable|disable>` - Enable or disable Nitro emotes.
-> {get_emoji('supportS', ':door:')} `{prefix}server` - Get an invite to the official SelfBot server.
-> {get_emoji('supportS', ':film_frames:')} `{prefix}animatestatus <frame_time> <frame1>|<frame2>|...` - Animate your status.
-> {get_emoji('supportS', ':stop_sign:')} `{prefix}stopanimation` - Stop the status animation."""
-    await ctx.send(help_text)
+"""
+    await ctx.send(help_intro)
+    
+    for category, commands in command_categories.items():
+        category_name = category.upper()
+        help_text = f"**{category_name} COMMANDS:**\n"
+        
+        for cmd, desc in commands.items():
+            help_text += f"> `{prefix}{cmd}` - {desc}\n"
+        
+        if len(help_text) > 2000:
+            chunks = [help_text[i:i+1900] for i in range(0, len(help_text), 1900)]
+            for chunk in chunks:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(help_text)
 
 def check_for_updates():
     try:
@@ -376,17 +527,459 @@ async def send_error(ctx, message, delete_after=5):
     await ctx.send(f"> **[ERROR]**: {message}", delete_after=delete_after)
 
 @bot.command()
+async def discordupdate(ctx):
+    await ctx.message.delete()
+    
+    update_version = f"{random.randint(100, 999)}.{random.randint(10, 99)}"
+    features = [
+        "Redesigned user interface",
+        "Enhanced voice chat quality",
+        "New emoji reactions",
+        "Improved server performance",
+        "Advanced security features",
+        "New Nitro perks",
+        "Expanded server limits",
+        "New message formatting options",
+        "Integrated AI assistant",
+        "Enhanced screen sharing"
+    ]
+    
+    selected_features = random.sample(features, 3)
+    feature_text = "\n".join([f"• {feature}" for feature in selected_features])
+    
+    countdown = 10
+    
+    discord_message = f"""
+```yaml
+Discord Update v{update_version}
+```
+**A new Discord update is available and will be installed automatically.**
+
+**New Features:**
+{feature_text}
+
+**Update will begin in {countdown} seconds.**
+Please save any unsent messages.
+
+*Discord Client Update • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    
+    message = await ctx.send(discord_message)
+    
+    for i in range(countdown-1, -1, -1):
+        await asyncio.sleep(1)
+        discord_message = f"""
+```yaml
+Discord Update v{update_version}
+```
+**A new Discord update is available and will be installed automatically.**
+
+**New Features:**
+{feature_text}
+
+**Update will begin in {i} seconds.**
+Please save any unsent messages.
+
+*Discord Client Update • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+        await message.edit(content=discord_message)
+    
+    discord_message = f"""
+```yaml
+Discord Update v{update_version} - Installing...
+```
+**Discord is now updating. The application will restart automatically when complete.**
+
+**Progress: 0%**
+`[                    ]`
+
+*Discord Client Update • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    await message.edit(content=discord_message)
+    
+    for i in range(5, 101, 5):
+        await asyncio.sleep(1)
+        progress_bar = "["
+        filled = int(i/5)
+        progress_bar += "=" * filled + " " * (20 - filled) + "]"
+        discord_message = f"""
+```yaml
+Discord Update v{update_version} - Installing...
+```
+**Discord is now updating. The application will restart automatically when complete.**
+
+**Progress: {i}%**
+`{progress_bar}`
+
+*Discord Client Update • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+        await message.edit(content=discord_message)
+    
+    discord_message = f"""
+```diff
++ Discord Update Complete
+```
+**Update has been installed successfully!**
+
+Discord will restart in a few seconds to apply changes.
+
+*Discord Client Update • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    await message.edit(content=discord_message)
+
+@bot.command()
+async def terminate(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        user = ctx.author
+    
+    violations = [
+        "Sending unsolicited advertisements",
+        "Sharing content that violates Terms of Service",
+        "Engaging in harassment or bullying",
+        "Sharing illegal content",
+        "Using self-bots or automated scripts",
+        "Participating in raids or server attacks",
+        "Creating spam accounts",
+        "Selling or purchasing accounts",
+        "Distributing malware or phishing links",
+        "Abusing Discord's API"
+    ]
+    
+    selected_violation = random.choice(violations)
+    case_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    
+    discord_message = f"""
+```diff
+- Account Termination Notice
+```
+**Dear {user.name},**
+
+We're writing to inform you that your Discord account has been terminated for violating our Terms of Service and Community Guidelines.
+
+**Violation:** {selected_violation}
+
+**Case ID:** {case_id}
+
+This decision is final and your account will no longer be accessible. All data associated with this account will be deleted in accordance with our Privacy Policy.
+
+*Discord Trust & Safety Team • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    
+    await ctx.send(discord_message)
+
+@bot.command()
+async def raidalert(ctx):
+    await ctx.message.delete()
+    
+    alert_messages = [
+        "⚠️ **SERVER RAID IN PROGRESS** ⚠️",
+        "🚨 **RAID ALERT - EMERGENCY PROTOCOLS ACTIVATED** 🚨",
+        "⚠️ **SERVER UNDER ATTACK - RAID DETECTED** ⚠️",
+        "🚨 **EMERGENCY: COORDINATED RAID DETECTED** 🚨",
+        "⚠️ **WARNING: SERVER RAID DETECTED** ⚠️"
+    ]
+    
+    raid_message = f"{random.choice(alert_messages)}\n\n**A coordinated raid has been detected on this server!**\n\n• **Raid bots detected:** {random.randint(15, 150)}\n• **Attack type:** {random.choice(['Spam', 'Mass mentions', 'Invite spam', 'NSFW content', 'Phishing links'])}\n• **Severity level:** {random.choice(['HIGH', 'CRITICAL', 'SEVERE'])}\n\n**Emergency protocols have been activated:**\n• Server lockdown initiated\n• Verification level increased\n• Auto-moderation enhanced\n• Raid accounts being banned\n\n**DO NOT** click any links until the raid is contained.\n\n*Discord Security System • {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*"
+    
+    message = await ctx.send(raid_message)
+    
+    for _ in range(5):
+        await asyncio.sleep(1)
+        await message.edit(content=raid_message.replace("🚨", "⚠️") if "🚨" in raid_message else raid_message.replace("⚠️", "🚨"))
+        raid_message = message.content
+
+@bot.command()
+async def nitroexpire(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        user = ctx.author
+    
+    days_left = random.randint(1, 3)
+    expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days_left)).strftime("%B %d, %Y")
+    
+    nitro_message = f"**Discord Nitro Expiration Notice**\n\n**Hey {user.name},**\n\nYour Discord Nitro subscription is about to expire in **{days_left} days** on **{expiry_date}**.\n\nWhen your subscription ends, you'll lose access to:\n• Custom animated emojis and stickers\n• Higher quality screen sharing\n• Larger file upload limit (100MB)\n• Server boosting capabilities\n• Custom profile banner\n• Animated avatar\n• Custom tag\n\n**Don't lose your perks!** Renew your subscription now to maintain all benefits.\n\n**Renewal Options**\n• Monthly: $9.99/month\n• Yearly: $99.99/year (Save 16%)\n\n*Discord Billing • Today at {datetime.datetime.now().strftime('%I:%M %p')}*"
+    
+    await ctx.send(nitro_message)
+
+@bot.command()
+async def ownertransfer(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        await ctx.send("> **[ERROR]**: Please mention a user to transfer ownership to.", delete_after=5)
+        return
+    
+    if not ctx.guild:
+        await ctx.send("> **[ERROR]**: This command can only be used in a server.", delete_after=5)
+        return
+    
+    transfer_message = f"**Server Ownership Transfer**\n\n**Server ownership has been transferred**\n\n**Previous owner:** {ctx.author.mention}\n**New owner:** {user.mention}\n\nThis action has been logged and cannot be undone. The new owner now has full control of the server settings, permissions, and management.\n\n*Discord System • Today at {datetime.datetime.now().strftime('%I:%M %p')}*"
+    
+    await ctx.send(transfer_message)
+
+@bot.command()
+async def staffwarning(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        user = ctx.author
+    
+    violations = [
+        "Use of automated user accounts (self-bots)",
+        "Distribution of unauthorized Discord modifications",
+        "Facilitating transactions for prohibited services",
+        "Sharing exploits or vulnerabilities",
+        "Organizing or participating in raids",
+        "Evading user blocks or server bans",
+        "Selling or purchasing accounts or servers",
+        "Excessive API abuse"
+    ]
+    
+    selected_violation = random.choice(violations)
+    case_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    
+    discord_message = f"""
+```fix
+Discord Staff Warning
+```
+**Attention {user.name},**
+
+Our systems have detected activity on your account that violates Discord's Terms of Service. This is an official warning from Discord Staff.
+
+**Detected Violation:** {selected_violation}
+
+**Case ID:** {case_id}
+
+Continued violations may result in permanent termination of your Discord account without further notice. This warning has been logged and will remain on your account record.
+
+*Discord Trust & Safety Team • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    
+    await ctx.send(discord_message)
+
+@bot.command()
+async def serverdelete(ctx):
+    await ctx.message.delete()
+    
+    if not ctx.guild:
+        await ctx.send("> **[ERROR]**: This command can only be used in a server.", delete_after=5)
+        return
+    
+    countdown = 10
+    
+    discord_message = f"""
+```diff
+- ⚠️ SERVER DELETION INITIATED ⚠️
+```
+**This server will be permanently deleted in {countdown} seconds.**
+
+**All channels, roles, and server data will be permanently lost.**
+
+This action was initiated by a server administrator and cannot be canceled.
+
+*Discord System • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    
+    message = await ctx.send(discord_message)
+    
+    for i in range(countdown-1, -1, -1):
+        await asyncio.sleep(1)
+        discord_message = f"""
+```diff
+- ⚠️ SERVER DELETION INITIATED ⚠️
+```
+**This server will be permanently deleted in {i} seconds.**
+
+**All channels, roles, and server data will be permanently lost.**
+
+This action was initiated by a server administrator and cannot be canceled.
+
+*Discord System • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+        await message.edit(content=discord_message)
+    
+    discord_message = f"""
+```diff
+- ⚠️ SERVER DELETION COMPLETE ⚠️
+```
+**This server has been scheduled for deletion.**
+
+All members will be removed and all data will be purged from Discord's servers within the next few minutes.
+
+Thank you for using Discord.
+
+*Discord System • Today at {datetime.datetime.now().strftime("%I:%M %p")}*
+"""
+    await message.edit(content=discord_message)
+
+@bot.command()
+async def stopanimation(ctx):
+    global status_animation_running
+    await ctx.message.delete()
+    
+    if not status_animation_running:
+        await ctx.send("> No status animation is currently running.", delete_after=5)
+        return
+    
+    status_animation_running = False
+    await ctx.send("> Status animation stopped.", delete_after=5)
+    await bot.change_presence(status=discord.Status.online, activity=None)
+
+@bot.command()
+async def fakehack(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        await ctx.send("> **[ERROR]**: Please mention a user to hack.", delete_after=5)
+        return
+    
+    progress_message = await ctx.send(f"```\nHacking {user.name}#{user.discriminator}...\n```")
+    
+    steps = [
+        f"Accessing Discord servers... [▓▓░░░░░░░░] 20%",
+        f"Bypassing authentication... [▓▓▓▓░░░░░░] 40%",
+        f"Retrieving user data... [▓▓▓▓▓▓░░░░] 60%",
+        f"Decrypting passwords... [▓▓▓▓▓▓▓▓░░] 80%",
+        f"Downloading personal information... [▓▓▓▓▓▓▓▓▓▓] 100%"
+    ]
+    
+    for step in steps:
+        await asyncio.sleep(1.5)
+        await progress_message.edit(content=f"```\nHacking {user.name}#{user.discriminator}...\n{step}\n```")
+    
+    await asyncio.sleep(1)
+    
+    email = f"{user.name.lower()}{random.randint(100, 999)}@{'gmail.com' if random.random() > 0.5 else 'yahoo.com'}"
+    password = ''.join(random.choices(string.ascii_letters + string.digits + string.punctuation, k=12))
+    ip = f"{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
+    phone = f"+1 ({random.randint(100, 999)}) {random.randint(100, 999)}-{random.randint(1000, 9999)}"
+    
+    result = f"""```
+HACK COMPLETE! User: {user.name}#{user.discriminator}
+
+[Personal Information]
+Email: {email}
+Password: {password}
+IP Address: {ip}
+Phone Number: {phone}
+Discord Token: {user.id}.{''.join(random.choices(string.ascii_letters + string.digits, k=27))}
+
+[Message History]
+- "Purry Forn free without registration"
+- "hot femboys kissing each other"
+- "femboy meeting 2025"
+
+[Payment Information]
+Credit Card: **** **** **** {random.randint(1000, 9999)}
+Expiration: {random.randint(1, 12)}/{random.randint(23, 28)}
+CVV: {random.randint(100, 999)}
+
+All data has been saved to your device.
+```"""
+    
+    await progress_message.edit(content=result)
+    
+    await asyncio.sleep(3)
+    await progress_message.edit(content="```\nJust kidding! This is a prank command. No actual hacking occurred.\n```")
+
+@bot.command()
+async def fakeban(ctx, user: discord.User = None, *, reason: str = "No reason provided"):
+    await ctx.message.delete()
+    
+    if not user:
+        await ctx.send("> **[ERROR]**: Please mention a user to ban.", delete_after=5)
+        return
+    
+    if not ctx.guild:
+        await ctx.send("> **[ERROR]**: This command can only be used in a server.", delete_after=5)
+        return
+    
+    ban_message = f"**:hammer: User Banned**\n\n{user.mention} has been banned from {ctx.guild.name}.\n\n**User ID:** {user.id}\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}\n\n**Ban ID:** {''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}"
+    
+    await ctx.send(ban_message)
+
+@bot.command()
+async def fakemute(ctx, user: discord.User = None, duration: str = "1h"):
+    await ctx.message.delete()
+    
+    if not user:
+        await ctx.send("> **[ERROR]**: Please mention a user to mute.", delete_after=5)
+        return
+    
+    if not ctx.guild:
+        await ctx.send("> **[ERROR]**: This command can only be used in a server.", delete_after=5)
+        return
+    
+    mute_message = f"**:mute: User Muted**\n\n{user.mention} has been muted for {duration}.\n\n**User ID:** {user.id}\n**Moderator:** {ctx.author.mention}\n**Duration:** {duration}\n\n**Mute expires:** {(datetime.datetime.now() + datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')}"
+    
+    await ctx.send(mute_message)
+
+@bot.command()
+async def fakenitro(ctx):
+    await ctx.message.delete()
+    
+    codes = [
+        "discord.gift/xnHs7KBHJnA8jJAK",
+        "discord.gift/PkDn7cBN9qLpJsQx",
+        "discord.gift/MnB7cVqLpDkJnSx9",
+        "discord.gift/BcN7VqLpDkJnSx9M"
+    ]
+    
+    nitro_message = f"**You've been gifted a subscription!**\n\nYou've been gifted Discord Nitro for 1 Month!\n\n**Claim your gift:**\n{random.choice(codes)}\n\n*Expires in 48 hours*"
+    
+    await ctx.send(nitro_message)
+
+@bot.command()
+async def fakeverify(ctx, user: discord.User = None):
+    await ctx.message.delete()
+    
+    if not user:
+        user = ctx.author
+    
+    verify_message = f"**:white_check_mark: Account Verified**\n\n{user.mention}'s account has been successfully verified.\n\n**User ID:** {user.id}\n**Verification Level:** Level 2\n**Verification Method:** Phone Number\n\n*Discord Security • Today at {datetime.datetime.now().strftime('%I:%M %p')}*"
+    
+    await ctx.send(verify_message)
+
+@bot.command()
+async def fakepayment(ctx, amount: str = "9.99"):
+    await ctx.message.delete()
+    
+    transaction_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    
+    payment_message = f"**:credit_card: Payment Successful**\n\nYour payment of **${amount}** has been processed successfully.\n\n**Transaction ID:** {transaction_id}\n**Payment Method:** Credit Card (****{random.randint(1000, 9999)})\n**Date:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n*Discord Billing • Today at {datetime.datetime.now().strftime('%I:%M %p')}*"
+    
+    await ctx.send(payment_message)
+
+@bot.command()
+async def fakegiveaway(ctx, *, prize: str = "Discord Nitro"):
+    await ctx.message.delete()
+    
+    duration = random.choice(["1 hour", "6 hours", "12 hours", "1 day", "3 days"])
+    winners = random.randint(1, 5)
+    
+    giveaway_message = f"**:tada: GIVEAWAY :tada:**\n\n**{prize}**\n\nReact with :tada: to enter!\nTime remaining: **{duration}**\n\n**Hosted by:** {ctx.author.mention}\n**Winners:** {winners}\n**Ends:** <t:{int(time.time() + 3600)}:R>\n\n*Giveaway ID: {''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}*"
+    
+    message = await ctx.send(giveaway_message)
+    await message.add_reaction("🎉")
+
+@bot.command()
 async def reload(ctx):
     await ctx.message.delete()
     
     try:
-        start_bat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'start.bat')
+        start_script_path = os.path.join(BASE_PATH, 'start.sh')
         
-        if not os.path.exists(start_bat_path):
-            await ctx.send("> **[ERROR]**: start.bat file not found.", delete_after=5)
-            return
-        
-        subprocess.Popen([start_bat_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        if not os.path.exists(start_script_path):
+            with open(start_script_path, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write(f"cd {BASE_PATH}\n")
+                f.write("python main.py\n")
+            os.chmod(start_script_path, 0o755)
+            
+        subprocess.Popen(["bash", start_script_path])
         
         await ctx.send("> Reloading the bot. Please wait...", delete_after=5)
         
@@ -396,7 +989,7 @@ async def reload(ctx):
         sys.exit()
     except Exception as e:
         await ctx.send(f"> **[ERROR]**: An error occurred while reloading: `{str(e)}`", delete_after=5)
-    
+
 @bot.command()
 async def check(ctx):
     await ctx.message.delete()
@@ -407,10 +1000,10 @@ async def check(ctx):
         return
 
     if update_available:
-        embed = f"""
-:rotating_light: **Update Available!** :rotating_light:
-
-A new version of the SelfBot is available!
+        message = f"""```diff
++ Update Available!
+```
+:rotating_light: **A new version of the SelfBot is available!** :rotating_light:
 
 :small_orange_diamond: Current version: `v{current_version}`
 :small_blue_diamond: Latest version: `v{latest_version}`
@@ -421,17 +1014,17 @@ A new version of the SelfBot is available!
 Stay up to date for the best experience!
 """
     else:
-        embed = f"""
-:white_check_mark: **SelfBot is Up to Date!**
-
-You're running the latest version of the SelfBot.
+        message = f"""```diff
++ SelfBot is Up to Date!
+```
+:white_check_mark: **You're running the latest version of the SelfBot.**
 
 :small_blue_diamond: Current version: `v{current_version}`
 
 Keep enjoying the latest features!
 """
 
-    await ctx.send(embed)
+    await ctx.send(message)
 
 async def auto_check_updates():
     while True:
@@ -456,15 +1049,25 @@ Stay up to date for the best experience!
 
 def update_selfbot():
     try:
-        subprocess.run(["git", "clone", "https://github.com/zeozcb/Radon.git", "temp_update"], check=True)
+        temp_update_path = os.path.join(BASE_PATH, "temp_update")
+        subprocess.run(["git", "clone", "https://github.com/zeozcb/Radon.git", temp_update_path], check=True)
         
-        shutil.copy("config/config.json", "temp_update/config/config.json")
+        shutil.copy2(os.path.join(BASE_PATH, "config", "config.json"), 
+                     os.path.join(temp_update_path, "config", "config.json"))
         
-        subprocess.run(["temp_update/setup.bat"], check=True)
+        setup_script = os.path.join(temp_update_path, "setup.sh")
+        if os.path.exists(setup_script):
+            subprocess.run(["bash", setup_script], check=True)
+        else:
+            with open(setup_script, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write("pip install -r requirements.txt\n")
+            os.chmod(setup_script, 0o755)
+            subprocess.run(["bash", setup_script], check=True)
         
-        subprocess.Popen(["python", "temp_update/main.py"])
+        subprocess.Popen(["python", os.path.join(temp_update_path, "main.py")])
         
-        shutil.rmtree("temp_update")
+        shutil.rmtree(temp_update_path)
         
         sys.exit()
     except Exception as e:
@@ -657,7 +1260,10 @@ async def media(ctx):
     await ctx.message.delete()
 
     if not any(platform['link'] for platform in config['social_media'].values()):
-        embed = f"""**SOCIAL MEDIA CONFIGURATION | Prefix: `{prefix}`**\n
+        message = f"""```yaml
+SOCIAL MEDIA CONFIGURATION | Prefix: {prefix}
+```
+
 To configure your social media links, use the following command:
 `{prefix}setsocial <platform> <emoji> <text> <link>`
 
@@ -669,15 +1275,18 @@ Example:
 Current configuration:
 """
         for platform, data in config['social_media'].items():
-            embed += f"> {data['emoji']} `{platform}`: {data['text']} - {data['link'] or 'Not configured'}\n"
+            message += f"> {data['emoji']} `{platform}`: {data['text']} - {data['link'] or 'Not configured'}\n"
 
     else:
-        embed = f"""**MY SOCIAL NETWORKS | Prefix: `{prefix}`**\n"""
+        message = f"""```yaml
+MY SOCIAL NETWORKS | Prefix: {prefix}
+```
+"""
         for platform, data in config['social_media'].items():
             if data['link']:
-                embed += f"> {data['emoji']} [{data['text']}]({data['link']})\n"
+                message += f"> {data['emoji']} [{data['text']}]({data['link']})\n"
 
-    await ctx.send(embed)
+    await ctx.send(message)
 
 @bot.command()
 async def setsocial(ctx, platform: str, emoji: str, text: str, link: str):
@@ -707,16 +1316,27 @@ async def geoip(ctx, ip: str=None):
     try:
         r = requests.get(f'http://ip-api.com/json/{ip}')
         geo = r.json()
-        embed = f"""**GEOLOCATE IP | Prefix: `{prefix}`**\n
-        > :pushpin: `IP`\n*{geo['query']}*
-        > :globe_with_meridians: `Country-Region`\n*{geo['country']} - {geo['regionName']}*
-        > :department_store: `City`\n*{geo['city']} ({geo['zip']})*
-        > :map: `Latitute-Longitude`\n*{geo['lat']} - {geo['lon']}*
-        > :satellite: `ISP`\n*{geo['isp']}*
-        > :robot: `Org`\n*{geo['org']}*
-        > :alarm_clock: `Timezone`\n*{geo['timezone']}*
-        > :electric_plug: `As`\n*{geo['as']}*"""
-        await ctx.send(embed, file=discord.File("img/zeo.gif"))
+        message = f"""```yaml
+GEOLOCATE IP | Prefix: {prefix}
+```
+
+> :pushpin: `IP`
+*{geo['query']}*
+> :globe_with_meridians: `Country-Region`
+*{geo['country']} - {geo['regionName']}*
+> :department_store: `City`
+*{geo['city']} ({geo['zip']})*
+> :map: `Latitute-Longitude`
+*{geo['lat']} - {geo['lon']}*
+> :satellite: `ISP`
+*{geo['isp']}*
+> :robot: `Org`
+*{geo['org']}*
+> :alarm_clock: `Timezone`
+*{geo['timezone']}*
+> :electric_plug: `As`
+*{geo['as']}*"""
+        await ctx.send(message)
     except Exception as e:
         await ctx.send(f'> **[**ERROR**]**: Unable to geolocate ip\n> __Error__: `{str(e)}`', delete_after=5)
 
@@ -779,11 +1399,11 @@ async def gentoken(ctx, user: str=None):
 @bot.command()
 async def quickdelete(ctx, *, message: str=None):
     await ctx.message.delete()
-
+    
     if not message:
         await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Command__: `quickdelete <message>`', delete_after=2)
         return
-    
+        
     await ctx.send(message, delete_after=2)
 
 @bot.command(aliases=['uicon'])
@@ -875,91 +1495,37 @@ async def tokeninfo(ctx, usertoken: str=None):
             pass
 
         try:
-            embed = f"""**TOKEN INFORMATIONS | Prefix: `{prefix}`**\n
-        > :dividers: __Basic Information__\n\tUsername: `{user_name}`\n\tUser ID: `{user_id}`\n\tCreation Date: `{creation_date}`\n\tAvatar URL: `{avatar_url if avatar_id else "None"}`
-        > :crystal_ball: __Nitro Information__\n\tNitro Status: `{has_nitro}`\n\tExpires in: `{days_left if days_left else "None"} day(s)`
-        > :incoming_envelope: __Contact Information__\n\tPhone Number: `{phone_number if phone_number else "None"}`\n\tEmail: `{email if email else "None"}`
-        > :shield: __Account Security__\n\t2FA/MFA Enabled: `{mfa_enabled}`\n\tFlags: `{flags}`
-        > :paperclip: __Other__\n\tLocale: `{locale} ({language})`\n\tEmail Verified: `{verified}`"""
+            message = f"""```ini
+[TOKEN INFORMATIONS | Prefix: {prefix}]
+```
 
-            await ctx.send(embed, file=discord.File("img/zeo.gif"))
+> :dividers: __Basic Information__
+Username: `{user_name}`
+User ID: `{user_id}`
+Creation Date: `{creation_date}`
+Avatar URL: `{avatar_url if avatar_id else "None"}`
+
+> :crystal_ball: __Nitro Information__
+Nitro Status: `{has_nitro}`
+Expires in: `{days_left if days_left else "None"} day(s)`
+
+> :incoming_envelope: __Contact Information__
+Phone Number: `{phone_number if phone_number else "None"}`
+Email: `{email if email else "None"}`
+
+> :shield: __Account Security__
+2FA/MFA Enabled: `{mfa_enabled}`
+Flags: `{flags}`
+
+> :paperclip: __Other__
+Locale: `{locale} ({language})`
+Email Verified: `{verified}`"""
+
+            await ctx.send(message)
         except Exception as e:
             await ctx.send(f'> **[**ERROR**]**: Unable to recover token infos\n> __Error__: `{str(e)}`', delete_after=5)
     else:
         await ctx.send(f'> **[**ERROR**]**: Unable to recover token infos\n> __Error__: Invalid token', delete_after=5)
-
-@bot.command()
-async def cleardm(ctx, amount: str="1"):
-    await ctx.message.delete()
-
-    if not amount.isdigit():
-        await ctx.send(f'> **[**ERROR**]**: Invalid amount specified. It must be a number.\n> __Command__: `{config["prefix"]}cleardm <amount>`', delete_after=5)
-        return
-
-    amount = int(amount)
-
-    if amount <= 0 or amount > 100:
-        await ctx.send(f'> **[**ERROR**]**: Amount must be between 1 and 100.', delete_after=5)
-        return
-
-    if not isinstance(ctx.channel, discord.DMChannel):
-        await ctx.send(f'> **[**ERROR**]**: This command can only be used in DMs.', delete_after=5)
-        return
-
-    deleted_count = 0
-    async for message in ctx.channel.history(limit=amount):
-        if message.author == bot.user:
-            try:
-                await message.delete()
-                deleted_count += 1
-            except discord.Forbidden:
-                await ctx.send(f'> **[**ERROR**]**: Missing permissions to delete messages.', delete_after=5)
-                return
-            except discord.HTTPException as e:
-                await ctx.send(f'> **[**ERROR**]**: An error occurred while deleting messages: {str(e)}', delete_after=5)
-                return
-
-    await ctx.send(f'> **Cleared {deleted_count} messages in DMs.**', delete_after=5)
-
-
-@bot.command(aliases=['hs'])
-async def hypesquad(ctx, house: str=None):
-    await ctx.message.delete()
-
-    if not house:
-        await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Command__: `hypesquad <house>`', delete_after=5)
-        return
-
-    headers = {'Authorization': token, 'Content-Type': 'application/json'}
-
-    try:
-        r = requests.get('https://discord.com/api/v8/users/@me', headers=headers)
-        r.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        await ctx.send(f'> **[**ERROR**]**: Invalid status code\n> __Error__: `{str(e)}`', delete_after=5)
-        return
-
-    headers = {'Authorization': token, 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.305 Chrome/69.0.3497.128 Electron/4.0.8 Safari/537.36'}
-    payload = {}
-    if house == "bravery":
-        payload = {'house_id': 1}
-    elif house == "brilliance":
-        payload = {'house_id': 2}
-    elif house == "balance":
-        payload = {'house_id': 3}
-    else:
-        await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Error__: Hypesquad house must be one of the following: `bravery`, `brilliance`, `balance`', delete_after=5)
-        return
-
-    try:
-        r = requests.post('https://discordapp.com/api/v6/hypesquad/online', headers=headers, json=payload, timeout=10)
-        r.raise_for_status()
-
-        if r.status_code == 204:
-            await ctx.send(f'> Hypesquad House changed to `{house}`!')
-
-    except requests.exceptions.RequestException as e:
-        await ctx.send(f'> **[**ERROR**]**: Unable to change Hypesquad house\n> __Error__: `{str(e)}`', delete_after=5)
 
 @bot.command(aliases=['ginfo'])
 async def guildinfo(ctx):
@@ -970,13 +1536,25 @@ async def guildinfo(ctx):
         return
 
     date_format = "%a, %d %b %Y %I:%M %p"
-    embed = f"""> **GUILD INFORMATIONS | Prefix: `{prefix}`**
+    message = f"""```ini
+[GUILD INFORMATIONS | Prefix: {prefix}]
+```
+
 :dividers: __Basic Information__
-Server Name: `{ctx.guild.name}`\nServer ID: `{ctx.guild.id}`\nCreation Date: `{ctx.guild.created_at.strftime(date_format)}`\nServer Icon: `{ctx.guild.icon.url if ctx.guild.icon.url else 'None'}`\nServer Owner: `{ctx.guild.owner}`
+Server Name: `{ctx.guild.name}`
+Server ID: `{ctx.guild.id}`
+Creation Date: `{ctx.guild.created_at.strftime(date_format)}`
+Server Icon: `{ctx.guild.icon.url if ctx.guild.icon else 'None'}`
+Server Owner: `{ctx.guild.owner}`
+
 :page_facing_up: __Other Information__
-`{len(ctx.guild.members)}` Members\n`{len(ctx.guild.roles)}` Roles\n`{len(ctx.guild.text_channels) if ctx.guild.text_channels else 'None'}` Text-Channels\n`{len(ctx.guild.voice_channels) if ctx.guild.voice_channels else 'None'}` Voice-Channels\n`{len(ctx.guild.categories) if ctx.guild.categories else 'None'}` Categories"""
+`{len(ctx.guild.members)}` Members
+`{len(ctx.guild.roles)}` Roles
+`{len(ctx.guild.text_channels) if ctx.guild.text_channels else 'None'}` Text-Channels
+`{len(ctx.guild.voice_channels) if ctx.guild.voice_channels else 'None'}` Voice-Channels
+`{len(ctx.guild.categories) if ctx.guild.categories else 'None'}` Categories"""
     
-    await ctx.send(embed)
+    await ctx.send(message)
 
 @bot.command()
 async def nitrogen(ctx):
@@ -1139,13 +1717,6 @@ To stop the animation, use: `{prefix}stopanimation`
 
     await bot.change_presence(status=discord.Status.online, activity=None)  
 
-@bot.command()
-async def stopanimation(ctx):
-    global status_animation_running
-    await ctx.message.delete()
-    status_animation_running = False
-    await ctx.send("> Status animation stopped.", delete_after=5)
-
 @bot.command(aliases=['8ball'])
 async def magicball(ctx, *, question: str = None):
     await ctx.message.delete()
@@ -1268,7 +1839,12 @@ async def dox(ctx, username: str = None):
         await ctx.send("> **[ERROR]**: Invalid command.\n> __Command__: `dox <username>`", delete_after=5)
         return
 
-    embed = f"**DOX INFORMATION | Prefix: `{prefix}`**\n\n> :mag: __Potential Social Media Profiles__\n"
+    message = f"""```css
+[DOX INFORMATION | Prefix: {prefix}]
+```
+
+> :mag: __Potential Social Media Profiles__
+"""
 
     platforms = [
         ("Instagram", f"https://www.instagram.com/{username}/"),
@@ -1282,9 +1858,9 @@ async def dox(ctx, username: str = None):
     ]
 
     for platform, url in platforms:
-        embed += f"• {platform}: `{url}`\n"
+        message += f"• {platform}: `{url}`\n"
 
-    embed += f"""\n> :globe_with_meridians: __Other Potential Information__
+    message += f"""\n> :globe_with_meridians: __Other Potential Information__
 • Personal Website: `http://{username}.com`
 • Email: `{username}@gmail.com`
 • Possible Usernames: `{username}`, `{username}_`, `_{username}`, `{username}123`
@@ -1292,7 +1868,7 @@ async def dox(ctx, username: str = None):
 > :warning: __Disclaimer__
 This information is speculative and may not be accurate. It's based solely on the provided username. Always respect privacy and use this information responsibly."""
 
-    await ctx.send(embed)
+    await ctx.send(message)
 
 @bot.command(aliases=['mine'])
 async def minesweeper(ctx, size: int=5):
@@ -1426,13 +2002,45 @@ async def spam(ctx, amount: int=1, *, message_to_send: str="https://discord.gg/P
     await ctx.message.delete()
 
     try:
-        if amount <= 0 or amount > 9:
-            await ctx.send("> **[**ERROR**]**: Amount must be between 1 and 9", delete_after=5)
+        if amount <= 0 or amount > 50:
+            await ctx.send("> **[**ERROR**]**: Amount must be between 1 and 50", delete_after=5)
             return
-        for _ in range(amount):
-            await ctx.send(message_to_send)
+        
+        status_msg = await ctx.send(f"> Sending {amount} messages... Please wait.")
+        
+        sent_count = 0
+        for i in range(amount):
+            try:
+                await ctx.send(message_to_send)
+                sent_count += 1
+                
+                if (i + 1) % 5 == 0:
+                    await status_msg.edit(content=f"> Progress: {i+1}/{amount} messages sent")
+                
+                if amount <= 10:
+                    await asyncio.sleep(0.5)
+                elif amount <= 25:
+                    await asyncio.sleep(random.uniform(0.7, 1.2))
+                else:
+                    await asyncio.sleep(random.uniform(1.0, 1.5))
+                    
+            except discord.errors.HTTPException as e:
+                if e.code == 429:
+                    retry_after = e.retry_after
+                    await status_msg.edit(content=f"> Rate limited! Waiting {retry_after:.2f}s before continuing... ({i+1}/{amount})")
+                    await asyncio.sleep(retry_after + 0.5)
+                else:
+                    await status_msg.edit(content=f"> Error sending message {i+1}: {str(e)}")
+                    await asyncio.sleep(1)
+        
+        await status_msg.edit(content=f"> Successfully sent {sent_count}/{amount} messages.")
+        await asyncio.sleep(3)
+        await status_msg.delete()
+        
     except ValueError:
         await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Command__: `spam <amount> <message>`', delete_after=5)
+    except Exception as e:
+        await ctx.send(f'> **[**ERROR**]**: An unexpected error occurred: {str(e)}', delete_after=5)
 
 @bot.command(aliases=['gicon'])
 async def guildicon(ctx):
@@ -1624,7 +2232,8 @@ async def changeprefix(ctx, *, new_prefix: str=None):
         await ctx.send(f"> **[**ERROR**]**: Invalid command.\n> __Command__: `changeprefix <prefix>`", delete_after=5)
         return
     
-    config['prefix'] = new_prefix
+    if "tokens" in config and len(config["tokens"]) > 0:
+        config["tokens"][0]["prefix"] = new_prefix
     save_config(config)
     selfbot_menu(bot)
     
@@ -1715,7 +2324,7 @@ async def firstmessage(ctx):
         await ctx.send(f"> **[ERROR]**: An error occurred while fetching the first message. `{e}`", delete_after=5)
 
 @bot.command()
-async def ascii(ctx, *, message=None):
+async def ascii(ctx, *, message: str=None):
     await ctx.message.delete()
     
     if not message:
@@ -1728,7 +2337,58 @@ async def ascii(ctx, *, message=None):
     except Exception as e:
         await ctx.send(f"> **[ERROR]**: An error occurred while generating the ASCII art. `{e}`", delete_after=5)
 
+@bot.command()
+async def advertise(ctx, *, message: str = None):
+    await ctx.message.delete()
+    
+    if not message:
+        await ctx.send("> **[ERROR]**: Please provide a message to advertise.\n> __Command__: `advertise <message>`", delete_after=5)
+        return
+        
+    target_channels = ['public-games', 'public-condos']
+    success_count = 0
+    fail_count = 0
+    
+    min_delay = config['advertise_delay']['min']
+    max_delay = config['advertise_delay']['max']
+    
+    for guild in bot.guilds:
+        for channel in guild.text_channels:
+            if any(target in channel.name.lower() for target in target_channels):
+                try:
+                    await channel.send(message)
+                    success_count += 1
+                    await asyncio.sleep(random.uniform(min_delay, max_delay))
+                except Exception:
+                    fail_count += 1
+                    continue
+    
+    status_msg = f"> Advertisement sent to {success_count} channels (Failed: {fail_count})"
+    await ctx.send(status_msg, delete_after=5)
 
+@bot.command()
+async def setdelay(ctx, min_delay: float = None, max_delay: float = None):
+    await ctx.message.delete()
+    
+    if min_delay is None or max_delay is None:
+        current_min = config['advertise_delay']['min']
+        current_max = config['advertise_delay']['max']
+        await ctx.send(f"> Current advertise delay: `{current_min}s - {current_max}s`\n> To change: `{prefix}setdelay <min_seconds> <max_seconds>`", delete_after=5)
+        return
+        
+    if min_delay < 0 or max_delay < 0:
+        await ctx.send("> **[ERROR]**: Delay values cannot be negative.", delete_after=5)
+        return
+        
+    if min_delay > max_delay:
+        await ctx.send("> **[ERROR]**: Minimum delay cannot be greater than maximum delay.", delete_after=5)
+        return
+        
+    config['advertise_delay']['min'] = min_delay
+    config['advertise_delay']['max'] = max_delay
+    save_config(config)
+    
+    await ctx.send(f"> Advertise delay set to: `{min_delay}s - {max_delay}s`", delete_after=5)
 
 @bot.command()
 async def playing(ctx, *, status: str=None):
@@ -1785,5 +2445,44 @@ async def dmall(ctx, *, message: str="https://discord.gg/PKR7nM9j9U"):
         await asyncio.sleep(random.uniform(3, 6))
 
     await ctx.send(f"> **[**INFO**]**: DM process completed.\n> Successfully sent: `{success_count}`\n> Failed: `{fail_count}`", delete_after=10)
+
+@bot.command(aliases=['hs'])
+async def hypesquad(ctx, house: str=None):
+    await ctx.message.delete()
+
+    if not house:
+        await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Command__: `hypesquad <house>`', delete_after=5)
+        return
+
+    headers = {'Authorization': token, 'Content-Type': 'application/json'}
+
+    try:
+        r = requests.get('https://discord.com/api/v8/users/@me', headers=headers)
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f'> **[**ERROR**]**: Invalid status code\n> __Error__: `{str(e)}`', delete_after=5)
+        return
+
+    headers = {'Authorization': token, 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) discord/0.0.305 Chrome/69.0.3497.128 Electron/4.0.8 Safari/537.36'}
+    payload = {}
+    if house == "bravery":
+        payload = {'house_id': 1}
+    elif house == "brilliance":
+        payload = {'house_id': 2}
+    elif house == "balance":
+        payload = {'house_id': 3}
+    else:
+        await ctx.send(f'> **[**ERROR**]**: Invalid input\n> __Error__: Hypesquad house must be one of the following: `bravery`, `brilliance`, `balance`', delete_after=5)
+        return
+
+    try:
+        r = requests.post('https://discordapp.com/api/v6/hypesquad/online', headers=headers, json=payload, timeout=10)
+        r.raise_for_status()
+
+        if r.status_code == 204:
+            await ctx.send(f'> Hypesquad House changed to `{house}`!')
+
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f'> **[**ERROR**]**: Unable to change Hypesquad house\n> __Error__: `{str(e)}`', delete_after=5)
 
 bot.run(token)

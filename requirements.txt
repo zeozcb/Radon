@@ -1,4 +1,4 @@
-discord.py
+discord.py-self
 colorama
 requests
 asyncio
@@ -10,3 +10,4 @@ lyricsgenius
 psutil
 py-cpuinfo
 GPUtil
+setuptools
